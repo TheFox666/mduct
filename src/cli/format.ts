@@ -17,10 +17,72 @@ function minifyIfJson(s: string): string {
   try { return JSON.stringify(JSON.parse(s)); } catch { return s; }
 }
 
+/** A projectable list found inside a call result: the dominant array + which item fields are worth
+ *  keeping (short scalars / id-like) vs dropping (long strings, nested). Null when there's nothing
+ *  to slim (non-JSON, no array, or no short fields — don't cry wolf on data we can't help with). */
+type Recipe = { path: string; keep: string[]; drop: string[]; count: number };
+const ID_LIKE = /^(id|iid|key|identifier|name|title|state|status|url|slug|number|priority|type|label)s?$/i;
+function projectionRecipe(text: string): Recipe | null {
+  let data: unknown;
+  try { data = JSON.parse(text.trimStart()); } catch { return null; }
+  // dominant array = the value itself, or the object property holding the most items
+  let arr: unknown[] | null = null, path = ".";
+  if (Array.isArray(data)) arr = data;
+  else if (data && typeof data === "object") {
+    let best: { k: string; a: unknown[] } | null = null;
+    for (const [k, v] of Object.entries(data))
+      if (Array.isArray(v) && (!best || v.length > best.a.length)) best = { k, a: v };
+    if (best) { arr = best.a; path = `.${best.k}`; }
+  }
+  if (!arr || arr.length === 0) return null;
+  const objs = arr.filter((x) => x && typeof x === "object" && !Array.isArray(x)).slice(0, 30) as Record<string, unknown>[];
+  if (objs.length === 0) return null;
+  const keys = new Set<string>();
+  for (const o of objs) for (const k of Object.keys(o)) keys.add(k);
+  // classify: id-like scalars are the identity/summary fields agents actually want; other short
+  // scalars are a fallback; long strings + nested objects are the space hogs to drop. Keeping
+  // "every short scalar" is the trap — it drags in 15 timestamps/ids and slims nothing.
+  const idLike: string[] = [], shortScalar: string[] = [], heavy: string[] = [];
+  for (const k of keys) {
+    let maxLen = 0, scalar = true;
+    for (const o of objs) {
+      const v = o[k];
+      if (v == null) continue;
+      if (typeof v === "object") { scalar = false; break; }
+      maxLen = Math.max(maxLen, String(v).length);
+    }
+    if (!scalar) heavy.push(k);              // nested object/array
+    else if (ID_LIKE.test(k)) idLike.push(k); // identity/summary — keep even if longish (title, url)
+    else if (maxLen <= 40) shortScalar.push(k);
+    else heavy.push(k);                       // long non-id string = description/body-like
+  }
+  // prefer the id-like set; only fall back to short scalars when there are no id-like fields at all
+  const keep = (idLike.length ? idLike : shortScalar).slice(0, 8);
+  if (keep.length === 0) return null;
+  const drop = [...heavy, ...idLike, ...shortScalar].filter((k) => !keep.includes(k));
+  return { path, keep, drop, count: arr.length };
+}
+
+/** The stderr warning shown in place of an oversized dump: size, a ready --full|jq projection with
+ *  the real field names, what got dropped, and the escape hatches (narrow / --full). */
+function oversizeWarning(chars: number, server: string, tool: string, r: Recipe): string {
+  const proj = `${r.path === "." ? "" : `${r.path}|`}map({${r.keep.join(",")}})`;
+  const dropNote = r.drop.length ? `   dropped (long/nested): ${r.drop.slice(0, 8).join(" ")}` : "";
+  return [
+    `⚠ ${r.count} items, ~${Math.round(chars / 1024)} KB — too big for context. Slim it, don't dump it:`,
+    `  project fields:  mux call ${server} ${tool} … --full | jq -c '${proj}'`,
+    `  fields kept:     ${r.keep.join(" ")}${dropNote}`,
+    `  or narrow:       add filter args (limit=/state=/query=…) — mux schema ${server} ${tool}`,
+    `  or full anyway:  re-run with --full`,
+  ].join("\n");
+}
+
 /** Print a CallResult per the output contract. Returns process exit code.
  *  raw → the full envelope as COMPACT json (token-efficient; pipe to `jq .` if you want it pretty).
- *  compact → losslessly minify any JSON-parseable text content (strips server pretty-print). */
-export function printResult(res: { content: unknown[]; isError?: boolean }, opts: { raw?: boolean; compact?: boolean }): number {
+ *  compact → losslessly minify any JSON-parseable text content (strips server pretty-print).
+ *  warnAbove (chars) → when the printed output exceeds it and holds a projectable list, print a
+ *    slim-it-first warning to stderr instead of the blob (return 2); --full bypasses the guard. */
+export function printResult(res: { content: unknown[]; isError?: boolean }, opts: { raw?: boolean; compact?: boolean; full?: boolean; warnAbove?: number; server?: string; tool?: string }): number {
   if (opts.raw) { console.log(JSON.stringify(res)); return res.isError ? 1 : 0; }
   const lines: string[] = [];
   let dir: string | null = null;
@@ -37,6 +99,12 @@ export function printResult(res: { content: unknown[]; isError?: boolean }, opts
   }
   const text = lines.join("\n");
   if (res.isError) { console.error(text); return 1; }
+  // size guard: keep an oversized dump out of the caller's context (only when we can suggest a
+  // projection — otherwise printing is the only useful thing we can do).
+  if (!opts.full && opts.warnAbove && text.length > opts.warnAbove) {
+    const r = projectionRecipe(text);
+    if (r) { process.stderr.write(`${oversizeWarning(text.length, opts.server ?? "<server>", opts.tool ?? "<tool>", r)}\n`); return 2; }
+  }
   console.log(text);
   return 0;
 }

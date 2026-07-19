@@ -15,6 +15,7 @@ CALL & RUN
        [key:=<json> …]                        key:=<json> = a JSON value (arrays/objects/typed);
        [--args '<json>' | - | @file]          --args merges an object (- = stdin, @file = a file)
        [--timeout <s>] [--raw] [--compact]    --raw = full compact envelope; --compact minifies JSON output
+       [--full]                               --full bypasses the oversized-list guard (also: to pipe)
   run <tool> [args …]                  run a CLI tool (kubectl/aws/…) with its stored env/wrapping
   tools <server>                       list a server's tools (compact — no schemas)
   schema <server> <tool>               full JSON schema of one tool
@@ -58,12 +59,13 @@ INSTANCES
 PIPING (keep big outputs OUT of your context — lossless)
   \`mux call\` prints the tool's JSON to stdout, so pipe it through jq: only the
   filtered result becomes the tool output in your context, the full blob never does.
+  Add --full when piping a big list (it bypasses the oversized-list guard).
     # 20 issues as 4 fields each, not full bodies (measured: ~13.7k → ~1.1k chars):
-    mux call linear-server list_issues limit=20 | jq -c '.issues|map({id,title,status,priority:.priority.name})'
+    mux call linear-server list_issues limit=20 --full | jq -c '.issues|map({id,title,status,priority:.priority.name})'
     # don't know the shape? peek once, then project the fields you need:
-    mux call <server> <tool> | jq 'if type=="array" then .[0] else . end | keys'
+    mux call <server> <tool> --full | jq 'if type=="array" then .[0] else . end | keys'
     # combine calls — list, then fetch each (project the second call too):
-    mux call <server> list_x | jq -r '.[].id' | while read i; do mux call <server> get_x id=$i | jq -c '{id,title}'; done
+    mux call <server> list_x --full | jq -r '.[].id' | while read i; do mux call <server> get_x id=$i | jq -c '{id,title}'; done
 
 EXAMPLES
   mux call gitlab list_issues state=opened labels:='["bug"]'
@@ -139,10 +141,13 @@ async function main(): Promise<number> {
     }
     case "call": {
       const raw = boolFlag(argv, "--raw");
+      const full = boolFlag(argv, "--full"); // bypass the size guard: dump it all (or pipe it yourself)
       // compact: explicit --compact/--no-compact wins; otherwise the config default (mux config compact on)
       const noCompact = boolFlag(argv, "--no-compact");
       const compactFlag = boolFlag(argv, "--compact");
-      const compact = noCompact ? false : compactFlag ? true : (loadConfig().defaults?.compact ?? false);
+      const defaults = loadConfig().defaults;
+      const compact = noCompact ? false : compactFlag ? true : (defaults?.compact ?? false);
+      const warnAbove = defaults?.warnAbove;
       const timeout = flag(argv, "--timeout");
       let argsJson = flag(argv, "--args");
       // --args - reads JSON from stdin; --args @file from a file — heredoc complex args with no shell quoting
@@ -162,8 +167,8 @@ async function main(): Promise<number> {
       const ARGS_ERR = /-32602|validation|invalid arguments?|is required|missing|no tool|not found|unknown tool/i;
       try {
         const res = await daemonRequest("call", { server, tool, args: parseArgs(pairs, argsJson), timeoutMs }, ipcTimeout) as { content?: { type?: string; text?: string }[]; isError?: boolean };
-        const code = printResult(res as any, { raw, compact });
-        if (code !== 0 && !raw) {
+        const code = printResult(res as any, { raw, compact, full, warnAbove, server, tool });
+        if (code === 1 && !raw) { // real server/arg error only — the size guard (2) isn't one
           const text = (res.content ?? []).map((c) => (c.type === "text" ? c.text : "")).join(" ");
           if (ARGS_ERR.test(text)) process.stderr.write((await callErrorHint(server, tool)).replace(/^\n/, "") + "\n");
         }
@@ -221,7 +226,8 @@ async function main(): Promise<number> {
     case "config": {
       const cfg = loadConfig();
       if (argv.length === 0) {
-        console.log(`compact: ${cfg.defaults?.compact ? "on" : "off"}   (default output compaction for \`mux call\`)`);
+        console.log(`compact:   ${cfg.defaults?.compact ? "on" : "off"}   (minify JSON output of \`mux call\`)`);
+        console.log(`warnAbove: ${cfg.defaults?.warnAbove ? `${cfg.defaults.warnAbove} chars` : "off"}   (warn + suggest a jq projection instead of dumping an oversized list; --full bypasses)`);
         return 0;
       }
       if (argv[0] === "compact" && (argv[1] === "on" || argv[1] === "off")) {
@@ -230,7 +236,16 @@ async function main(): Promise<number> {
         console.log(`compact default → ${argv[1]}`);
         return 0;
       }
-      console.error("usage: mux config              # show defaults\n       mux config compact on|off   # minify JSON output by default");
+      if (argv[0] === "warnAbove" && argv[1]) {
+        const { setDefault } = await import("./shared/configEdit");
+        if (argv[1] === "off") { setDefault("warnAbove", undefined); console.log("warnAbove default → off"); return 0; }
+        const n = Number(argv[1]);
+        if (!Number.isInteger(n) || n <= 0) { console.error(`bad size "${argv[1]}" — chars (e.g. 25000) or off`); return 1; }
+        setDefault("warnAbove", n);
+        console.log(`warnAbove default → ${n} chars`);
+        return 0;
+      }
+      console.error("usage: mux config                  # show defaults\n       mux config compact on|off       # minify JSON output by default\n       mux config warnAbove <chars|off> # guard against oversized dumps (e.g. 25000)");
       return 1;
     }
     case "auth": {

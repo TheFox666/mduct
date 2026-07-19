@@ -27,12 +27,12 @@ function save(cfg: Config): void {
   renameSync(tmp, p);
 }
 
-/** Set (or clear, with undefined) a per-instance default like `compact`. */
-export function setDefault(key: "compact", value: boolean | undefined): void {
+/** Set (or clear, with undefined) a per-instance default (`compact`, `warnAbove`). */
+export function setDefault(key: "compact" | "warnAbove", value: boolean | number | undefined): void {
   const cfg = rawConfig();
   cfg.defaults ??= {};
   if (value === undefined) delete cfg.defaults[key];
-  else cfg.defaults[key] = value;
+  else (cfg.defaults as Record<string, unknown>)[key] = value;
   save(cfg);
 }
 

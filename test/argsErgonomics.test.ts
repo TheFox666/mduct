@@ -25,6 +25,54 @@ describe("printResult output compaction", () => {
   });
 });
 
+function run(fn: () => number): { out: string; err: string; code: number } {
+  const out: string[] = [], err: string[] = [];
+  const ol = console.log, oe = process.stderr.write;
+  console.log = (s?: unknown) => { out.push(String(s)); };
+  (process.stderr as unknown as { write: (s: unknown) => boolean }).write = (s: unknown) => { err.push(String(s)); return true; };
+  let code = 0;
+  try { code = fn(); } finally { console.log = ol; process.stderr.write = oe; }
+  return { out: out.join("\n"), err: err.join(""), code };
+}
+
+describe("printResult oversized-list guard (warnAbove)", () => {
+  const big = JSON.stringify({ issues: Array.from({ length: 40 }, (_, i) => ({ id: `X-${i}`, title: `t${i}`, status: "open", description: "d".repeat(200) })) });
+  const call = (opts: Record<string, unknown>) => run(() => printResult({ content: [{ type: "text", text: big }] }, { compact: true, warnAbove: 200, server: "lin", tool: "list_issues", ...opts }));
+
+  test("over threshold: warns to stderr with a real projection, prints nothing, returns 2", () => {
+    const r = call({});
+    expect(r.code).toBe(2);
+    expect(r.out).toBe(""); // the blob never reaches stdout / context
+    expect(r.err).toContain("too big");
+    expect(r.err).toContain(".issues|map({"); // dominant array projected
+    expect(r.err).toMatch(/id.*title.*status/); // short/id-like fields kept
+    expect(r.err).toContain("description"); // long field named as dropped
+    expect(r.err).toContain("--full");
+  });
+  test("--full bypasses the guard: prints the (compact) blob, returns 0", () => {
+    const r = call({ full: true });
+    expect(r.code).toBe(0);
+    expect(r.err).toBe("");
+    expect(r.out).toBe(big); // already minified (compact); lossless
+  });
+  test("over threshold but not JSON/projectable → prints normally (never cry wolf)", () => {
+    const r = run(() => printResult({ content: [{ type: "text", text: "x".repeat(500) }] }, { warnAbove: 200, server: "s", tool: "t" }));
+    expect(r.code).toBe(0);
+    expect(r.out).toBe("x".repeat(500));
+    expect(r.err).toBe("");
+  });
+  test("under threshold → prints normally", () => {
+    const r = run(() => printResult({ content: [{ type: "text", text: '{"a":1}' }] }, { compact: true, warnAbove: 200 }));
+    expect(r.code).toBe(0);
+    expect(r.out).toBe('{"a":1}');
+  });
+  test("no warnAbove set → guard is inert", () => {
+    const r = call({ warnAbove: undefined });
+    expect(r.code).toBe(0);
+    expect(r.out).toBe(big);
+  });
+});
+
 describe("toolSignature", () => {
   test("required plain, optional with ?", () => {
     const schema = { type: "object", properties: { name: {}, repo: {} }, required: ["name"] };

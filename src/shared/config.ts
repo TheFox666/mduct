@@ -17,7 +17,7 @@ export type ToolCfg = {
   check?: string; setup?: string; note?: string; disabled?: boolean;
 };
 /** Per-instance defaults applied to every call unless a flag overrides them. */
-export type Defaults = { compact?: boolean };
+export type Defaults = { compact?: boolean; warnAbove?: number };
 export type Config = { servers: Record<string, ServerCfg>; tools: Record<string, ToolCfg>; defaults?: Defaults };
 
 export function loadConfig(): Config {
