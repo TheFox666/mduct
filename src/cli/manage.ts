@@ -1,8 +1,44 @@
 import type { ServerCfg } from "../shared/config";
 import { addServer, removeServer, setDisabled } from "../shared/configEdit";
+import { searchRegistry, toServerCfg } from "../shared/registry";
 
-/** `mux add <name> [--url u | -- cmd…] [--env K=V…] [--note n] [--replace]` — AX path, no TTY. */
-export function cmdAdd(argv: string[]): number {
+export async function cmdSearch(query: string | undefined): Promise<number> {
+  if (!query) { console.error("usage: mux search <query>"); return 1; }
+  const hits = await searchRegistry(query);
+  if (!hits.length) { console.log("(no results)"); return 0; }
+  for (const h of hits) console.log(`${h.ref}\t${h.description}`);
+  return 0;
+}
+
+/** Registry install: `mux add <ref-with-slash> [--as name] [--replace]`. */
+async function addFromRegistry(ref: string, as: string | undefined, replace: boolean): Promise<number> {
+  const hits = await searchRegistry(ref);
+  const hit = hits.find((h) => h.ref === ref) ?? hits[0];
+  if (!hit) { console.error(`"${ref}" not found in registry — try: mux search <query>`); return 1; }
+  const { cfg, requiredEnv } = toServerCfg(hit);
+  const name = as ?? ref.split("/").pop()!.replace(/[^a-z0-9-]/gi, "-");
+  addServer(name, cfg, { replace });
+  console.log(`added: ${name} (${hit.ref})`);
+  if (requiredEnv.length)
+    console.log(`required env vars (referenced as \${VAR} in the config — export before use): ${requiredEnv.join(", ")}`);
+  console.log(`try: mux tools ${name}`);
+  return 0;
+}
+
+/**
+ * `mux add <name> [--url u | -- cmd…] [--env K=V…] [--note n] [--replace]` — manual, AX path.
+ * `mux add <ref-with-slash> [--as name]` — registry install (refs look like com.gitlab/mcp).
+ */
+export async function cmdAdd(argv: string[]): Promise<number> {
+  if (argv[0]?.includes("/")) {
+    const asIdx = argv.indexOf("--as");
+    const as = asIdx >= 0 ? argv[asIdx + 1] : undefined;
+    return addFromRegistry(argv[0], as, argv.includes("--replace"));
+  }
+  return cmdAddManual(argv);
+}
+
+function cmdAddManual(argv: string[]): number {
   const dashdash = argv.indexOf("--");
   const command = dashdash >= 0 ? argv.slice(dashdash + 1) : [];
   const head = dashdash >= 0 ? argv.slice(0, dashdash) : [...argv];

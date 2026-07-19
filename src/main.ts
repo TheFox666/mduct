@@ -94,7 +94,11 @@ async function main(): Promise<number> {
     }
     case "add": {
       const { cmdAdd } = await import("./cli/manage");
-      return cmdAdd(argv);
+      return await cmdAdd(argv);
+    }
+    case "search": {
+      const { cmdSearch } = await import("./cli/manage");
+      return await cmdSearch(argv[0]);
     }
     case "doctor": {
       const { cmdDoctor } = await import("./cli/doctor");
