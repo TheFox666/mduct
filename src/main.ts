@@ -8,7 +8,9 @@ const HELP = `mcpmux — MCP multiplexer. Commands:
   mux tools <server>          mux schema <server> <tool>
   mux servers                 mux index
   mux add <name> --url <u> | -- <cmd…>   mux remove/enable/disable <name>
-  mux import [name…]          mux logs [server] / status
+  mux import [name…]          mux search <query>
+  mux doctor                  mux hook install claude [--remove]
+  mux logs [server]           mux status
   mux daemon [--stop]         mux help
 Config: ${configPath()}`;
 
