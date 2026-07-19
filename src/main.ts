@@ -96,6 +96,10 @@ async function main(): Promise<number> {
       const { cmdAdd } = await import("./cli/manage");
       return cmdAdd(argv);
     }
+    case "doctor": {
+      const { cmdDoctor } = await import("./cli/doctor");
+      return cmdDoctor(daemonRequest);
+    }
     case "import": {
       const { cmdImport } = await import("./cli/importCmd");
       return cmdImport(argv);
