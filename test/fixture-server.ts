@@ -16,4 +16,8 @@ server.tool("boom", "always fails", {}, async () => ({
 server.tool("admin_delete", "guarded destructive op", {}, async () => ({
   content: [{ type: "text", text: "deleted" }],
 }));
+server.tool("die", "crashes the server process", {}, async () => {
+  setTimeout(() => process.exit(1), 10);
+  return { content: [{ type: "text", text: "dying" }] };
+});
 await server.connect(new StdioServerTransport());

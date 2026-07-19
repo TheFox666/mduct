@@ -45,7 +45,8 @@ export async function startDaemon(): Promise<{ stop(): Promise<void> }> {
   const sweep = setInterval(() => {
     for (const [n, c] of conns) {
       const ttlMin = config.servers[n]?.idleTtlMin ?? 30;
-      if (c.connectedSince && Date.now() - (lastUsed.get(n) ?? 0) > ttlMin * 60_000) {
+      // never close a connection with queued/running calls, even past the TTL (#23)
+      if (!c.busy && c.connectedSince && Date.now() - (lastUsed.get(n) ?? 0) > ttlMin * 60_000) {
         log(`idle-closing ${n}`);
         void c.close();
       }

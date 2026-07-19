@@ -9,34 +9,46 @@ export type CallResult = { content: unknown[]; isError?: boolean };
 
 export class ServerConnection {
   private client: Client | null = null;
+  private connecting: Promise<Client> | null = null;
   private tools: ToolInfo[] | null = null;
   private queue: Promise<unknown> = Promise.resolve();
+  private active = 0; // in-flight or queued calls — the idle sweep must skip a busy connection (#23)
   connectedSince: number | null = null;
 
   constructor(readonly name: string, readonly cfg: ServerCfg) {}
 
-  private async ensure(): Promise<Client> {
-    if (this.client) return this.client;
-    const client = new Client({ name: "mcpmux", version: "0.1.0" });
-    const transport = this.cfg.command
-      ? new StdioClientTransport({
-          command: this.cfg.command,
-          args: this.cfg.args ?? [],
-          env: { ...process.env, ...this.cfg.env } as Record<string, string>,
-        })
-      : new StreamableHTTPClientTransport(new URL(this.cfg.url!), {
-          requestInit: { headers: this.cfg.headers },
-        });
-    await client.connect(transport);
-    // tool-list change notifications invalidate the cache (best-effort across sdk versions)
-    try {
-      (client as any).fallbackNotificationHandler = async (n: { method?: string }) => {
-        if (n.method === "notifications/tools/list_changed") this.tools = null;
-      };
-    } catch { /* cache then only refreshes on reconnect */ }
-    this.client = client;
-    this.connectedSince = Date.now();
-    return client;
+  /** True while any call is queued or running — checked by the daemon's idle sweep. */
+  get busy(): boolean { return this.active > 0; }
+
+  private drop(): void {
+    this.client = null;
+    this.connecting = null;
+    this.tools = null;
+    this.connectedSince = null;
+  }
+
+  /** Memoized connect: concurrent first-callers share ONE client, no orphaned children (#3). */
+  private ensure(): Promise<Client> {
+    if (this.client) return Promise.resolve(this.client);
+    if (this.connecting) return this.connecting;
+    this.connecting = (async () => {
+      const client = new Client({ name: "mcpmux", version: "0.1.0" });
+      const transport = this.cfg.command
+        ? new StdioClientTransport({
+            command: this.cfg.command,
+            args: this.cfg.args ?? [],
+            env: { ...process.env, ...this.cfg.env } as Record<string, string>,
+          })
+        : new StreamableHTTPClientTransport(new URL(this.cfg.url!), { requestInit: { headers: this.cfg.headers } });
+      // transport death → drop the dead client so the next call reconnects transparently (#5)
+      transport.onclose = () => { if (this.client === client) this.drop(); };
+      await client.connect(transport);
+      this.client = client;
+      this.connectedSince = Date.now();
+      return client;
+    })();
+    this.connecting.catch(() => { if (!this.client) this.connecting = null; });
+    return this.connecting;
   }
 
   async listTools(): Promise<ToolInfo[]> {
@@ -47,32 +59,45 @@ export class ServerConnection {
     return this.tools;
   }
 
-  /** Serialized per server; MCP servers are not uniformly reentrant. */
+  /**
+   * Serialized per server (MCP servers are not uniformly reentrant). The caller may time out,
+   * but the QUEUE SLOT is held until the underlying call actually settles — otherwise the next
+   * call would hit a still-busy server (#4). A failed call drops the client to force reconnect (#5).
+   */
   call(tool: string, args: Record<string, unknown>, timeoutMs = 60_000): Promise<CallResult> {
     if (!guardAllows(this.cfg.guard, tool))
       return Promise.reject(new Error(`guard: tool "${tool}" is blocked for server "${this.name}" — edit its guard in the config to change this`));
-    const run = async (): Promise<CallResult> => {
+
+    this.active++;
+    const real = this.queue.then(async () => {
       const client = await this.ensure();
-      const call = client.callTool({ name: tool, arguments: args });
-      let timer: ReturnType<typeof setTimeout>;
-      const timeout = new Promise<never>((_, rej) => {
-        timer = setTimeout(() => rej(new Error(`timeout after ${timeoutMs}ms calling ${this.name}.${tool} — retry with --timeout <s>`)), timeoutMs);
-      });
       try {
-        return (await Promise.race([call, timeout])) as CallResult;
-      } finally {
-        clearTimeout(timer!);
+        return (await client.callTool({ name: tool, arguments: args })) as CallResult;
+      } catch (e) {
+        this.drop(); // a failed call may mean a dead transport — force reconnect next time
+        throw e;
       }
-    };
-    const p = this.queue.then(run, run);
-    this.queue = p.catch(() => {});
-    return p;
+    });
+    this.queue = real.catch(() => {}); // next call waits for THIS one's real completion
+    real.finally(() => { this.active--; }).catch(() => {}); // decrement + swallow (caller sees the error via the race below)
+
+    // caller-facing timeout: races real completion, but never cancels the queue slot
+    return new Promise<CallResult>((resolve, reject) => {
+      let done = false;
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        reject(new Error(`timeout after ${timeoutMs}ms calling ${this.name}.${tool} — retry with --timeout <s>`));
+      }, timeoutMs);
+      real.then(
+        (r) => { if (!done) { done = true; clearTimeout(timer); resolve(r); } },
+        (e) => { if (!done) { done = true; clearTimeout(timer); reject(e); } },
+      );
+    });
   }
 
   async close(): Promise<void> {
     await this.client?.close().catch(() => {});
-    this.client = null;
-    this.tools = null;
-    this.connectedSince = null;
+    this.drop();
   }
 }
