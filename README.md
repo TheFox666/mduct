@@ -76,8 +76,28 @@ Per-server allow/deny patterns, enforced in the daemon — not in the prompt:
 
 | Variable | Effect |
 |---|---|
-| `MCPMUX_CONFIG` | config path (default `~/.config/mcpmux/servers.jsonc`) |
-| `MCPMUX_SOCKET` | daemon socket (default `$XDG_RUNTIME_DIR/mcpmux.sock`) |
+| `MCPMUX_PROFILE` | named instance → `~/.config/mcpmux-<profile>/` + its own socket (see below) |
+| `MCPMUX_CONFIG` | config path (default `~/.config/mcpmux[-<profile>]/servers.jsonc`) |
+| `MCPMUX_SECRETS` | secret store (default `~/.config/mcpmux[-<profile>]/secrets.json`) |
+| `MCPMUX_SOCKET` | daemon socket (default `$XDG_RUNTIME_DIR/mcpmux[-<profile>].sock`) |
+
+`mux status` prints the resolved socket/config/secrets paths, so it's always
+obvious which instance answered.
+
+## Named instances
+
+Run several fully isolated muxes — each its own config, secrets, auth and daemon
+— with a single env var, mirroring Claude's `~/.claude` vs `~/.claude-agent-office`:
+
+```sh
+mux servers                           # default instance → ~/.config/mcpmux/
+MCPMUX_PROFILE=office mux servers      # a separate instance → ~/.config/mcpmux-office/
+```
+
+Each profile has its own daemon (`…/mcpmux-<profile>.sock`), its own credentials,
+and its own server set — so one agent/account can't see or use another's. The
+explicit `MCPMUX_CONFIG`/`MCPMUX_SECRETS`/`MCPMUX_SOCKET` overrides still win when
+you need a bespoke path.
 
 ## CLI tools (not just MCP)
 
@@ -99,13 +119,17 @@ agent sees one capability list, no MCP-vs-CLI distinction:
 
 ```sh
 mux run playwright test.js     # exec with the tool's env/wrapping, stdio + exit code passthrough
-mux tool status                # installed / missing per tool
+mux tool status                # installed / missing per tool (+ update hint for pinned npm tools)
 mux tool setup playwright      # run its installer
+mux tool update [name]         # re-pin an npm-backed tool to the latest published version
 mux add kubectl --tool --check "kubectl version --client" -- kubectl
 ```
 
 `mux run` applies the stored env/wrapping, so a tool with a special setup works
-identically everywhere — no per-environment lock-in.
+identically everywhere — no per-environment lock-in. For an npm-backed tool
+(`bunx pkg@version`), `mux tool status` shows `↑ update X → Y` when a newer
+version is out, and `mux tool update` bumps the pin; unpinned (`@latest`) tracks
+latest already.
 
 ## Secrets
 
@@ -139,6 +163,7 @@ mux hook install claude     # SessionStart injects `mux index`; PreToolUse redir
 ## Import & registry
 
 ```sh
+mux add                     # interactive TUI picker (arrow keys, / to search the registry, ⏎ toggle)
 mux import                  # list MCP servers across all Claude configs (~/.claude*, .mcp.json)
 mux import linear           # copy one into mux (secrets externalized)
 mux search gitlab           # the public MCP registry
@@ -146,16 +171,19 @@ mux add com.gitlab/mcp --as gitlab   # install by registry ref (version-pinned)
 mux doctor                  # overlap report: servers attached directly AND served by mux
 ```
 
+Bare `mux add` on a terminal opens a raw-mode picker — ↑↓/jk to move, `/` to
+search the registry, ⏎ to install a hit or remove an installed server, `q` to
+quit. Non-interactive (piped/agent) use passes explicit args instead.
+
 ## Install
 
 ```sh
 mux daemon --install        # optional systemd user unit (warm daemon, Restart=on-failure)
 ```
 
-## Deliberately not built (v1)
+## Not built yet
 
-Interactive `mux add` picker — the non-interactive `mux search` + `mux add
-<ref>` covers both humans and agents, so a raw-mode TUI wasn't worth the
-surface. npm/Homebrew distribution channels are release chores.
+npm (`npx mcpmux`) and Homebrew distribution channels — release chores; for now
+`bun run build` + the `install.sh` (GitHub-release binary + checksum) cover it.
 
 MIT.
