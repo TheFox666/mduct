@@ -1,4 +1,3 @@
-import { createInterface } from "node:readline";
 import { loadConfig, type Config } from "../shared/config";
 import { addServer, removeServer } from "../shared/configEdit";
 import { refToName, searchRegistry, toServerCfg, type RegistryHit } from "../shared/registry";
@@ -26,50 +25,114 @@ export function pickerRows(cfg: Config, hits: RegistryHit[]): PickerRow[] {
   return rows;
 }
 
-/** Interactive `mux add` (TTY, no args): toggle installed servers off / install registry hits. */
+// ── ANSI helpers ────────────────────────────────────────────────────────────
+const A = {
+  clear: "\x1b[2J\x1b[3J\x1b[H", hideCur: "\x1b[?25l", showCur: "\x1b[?25h",
+  reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
+  green: "\x1b[32m", cyan: "\x1b[36m", yellow: "\x1b[33m", magenta: "\x1b[35m", gray: "\x1b[90m",
+  invBlue: "\x1b[30;46m",
+};
+
+/** Interactive `mux add` (TTY, no args): a raw-mode TUI to install registry servers / remove installed ones. */
 export async function runPicker(): Promise<number> {
-  if (!process.stdin.isTTY) {
+  const stdin = process.stdin;
+  if (!stdin.isTTY) {
     console.error("mux add needs an argument (non-interactive): mux add <name> -- <cmd> | mux add <ref> | mux add <name> --tool -- <cmd>");
     return 1;
   }
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const ask = (q: string) => new Promise<string>((res) => rl.question(q, res));
+
   let hits: RegistryHit[] = [];
-  try {
-    for (;;) {
-      const rows = pickerRows(loadConfig(), hits);
-      console.log("");
-      rows.forEach((r, i) => console.log(`  ${String(i + 1).padStart(2)}. ${r.installed ? "✓" : "+"} ${r.label}`));
-      console.log("  /<text> search registry   ·   <number> toggle   ·   q quit");
-      const input = (await ask("> ")).trim();
-      if (input === "" || input === "q") break;
-      if (input.startsWith("/")) {
-        const q = input.slice(1).trim();
-        if (!q) continue;
-        try { hits = await searchRegistry(q); if (!hits.length) console.log("(no registry results)"); }
-        catch (e) { console.log(`registry error: ${(e as Error).message}`); }
-        continue;
-      }
-      const n = Number(input);
-      const row = Number.isInteger(n) ? rows[n - 1] : undefined;
-      if (!row) { console.log("pick a listed number, /text, or q"); continue; }
-      if (row.installed) {
-        if ((await ask(`remove ${row.name}? [y/N] `)).trim().toLowerCase() === "y") {
-          removeServer(row.name);
-          console.log(`removed ${row.name}`);
-        }
-      } else {
-        const hit = hits.find((h) => h.ref === row.ref)!;
-        try {
-          const { cfg, requiredEnv } = toServerCfg(hit);
-          addServer(refToName(hit.ref), cfg);
-          console.log(`installed ${refToName(hit.ref)} (${hit.ref})`);
-          if (requiredEnv.length) console.log(`  needs: ${requiredEnv.map((v) => `mux secret set ${v}`).join(", ")}`);
-        } catch (e) { console.log(`install failed: ${(e as Error).message}`); }
+  let cursor = 0;
+  let mode: "list" | "search" = "list";
+  let query = "";
+  let flash = "";
+  let searching = false;
+
+  const out = (s: string) => process.stdout.write(s);
+  const render = () => {
+    const rows = pickerRows(loadConfig(), hits);
+    if (cursor >= rows.length) cursor = Math.max(0, rows.length - 1);
+    const lines: string[] = [
+      "",
+      `  ${A.bold}${A.magenta}mcpmux${A.reset}${A.bold} · add servers${A.reset}`,
+      "",
+    ];
+    if (rows.length === 0) {
+      lines.push(`  ${A.dim}no servers yet — press ${A.reset}${A.cyan}/${A.reset}${A.dim} to search the registry${A.reset}`);
+    }
+    rows.forEach((r, i) => {
+      const sel = i === cursor;
+      const pointer = sel ? `${A.cyan}▸${A.reset}` : " ";
+      const mark = r.installed ? `${A.green}✓${A.reset}` : `${A.cyan}+${A.reset}`;
+      const label = sel ? `${A.bold}${r.label}${A.reset}` : r.installed ? r.label : `${A.dim}${r.label}${A.reset}`;
+      lines.push(`  ${pointer} ${mark} ${label}`);
+    });
+    lines.push("");
+    if (mode === "search") {
+      lines.push(`  ${A.cyan}search:${A.reset} ${query}${A.invBlue} ${A.reset}   ${A.dim}${searching ? "…searching" : "⏎ run · esc cancel"}${A.reset}`);
+    } else {
+      lines.push(`  ${A.gray}↑↓${A.reset} move   ${A.gray}⏎${A.reset} install/remove   ${A.gray}/${A.reset} search   ${A.gray}q${A.reset} quit`);
+    }
+    if (flash) lines.push(`  ${A.yellow}${flash}${A.reset}`);
+    out(A.clear + A.hideCur + lines.join("\n") + "\n");
+  };
+
+  const toggle = () => {
+    const rows = pickerRows(loadConfig(), hits);
+    const row = rows[cursor];
+    if (!row) return;
+    if (row.installed) {
+      removeServer(row.name);
+      flash = `removed ${row.name}`;
+    } else {
+      const hit = hits.find((h) => h.ref === row.ref);
+      if (!hit) return;
+      try {
+        const { cfg, requiredEnv } = toServerCfg(hit);
+        const name = refToName(hit.ref);
+        addServer(name, cfg, { replace: true });
+        flash = `installed ${name}${requiredEnv.length ? ` — set secrets: ${requiredEnv.join(", ")}` : ""}`;
+      } catch (e) {
+        flash = `install failed: ${(e as Error).message}`;
       }
     }
+  };
+
+  const cleanup = () => { try { stdin.setRawMode(false); } catch { /* */ } stdin.pause(); out(A.showCur + "\n"); };
+
+  stdin.setRawMode(true);
+  stdin.resume();
+  render();
+  try {
+    for await (const chunk of stdin) {
+      const k = chunk.toString();
+      flash = "";
+      if (k === "\x03") break; // Ctrl-C
+      if (mode === "search") {
+        if (k === "\r" || k === "\n") {
+          mode = "list"; cursor = 0;
+          if (query.trim()) {
+            searching = true; render();
+            try { hits = await searchRegistry(query.trim()); flash = hits.length ? "" : "no registry results"; }
+            catch (e) { flash = `registry error: ${(e as Error).message}`; }
+            searching = false;
+          }
+        } else if (k === "\x1b") { mode = "list"; query = ""; }
+        else if (k === "\x7f" || k === "\b") { query = query.slice(0, -1); }
+        else if (k >= " " && !k.startsWith("\x1b")) { query += k; }
+        render();
+        continue;
+      }
+      // list mode
+      if (k === "q" || k === "\x1b") break;
+      else if (k === "/") { mode = "search"; query = ""; }
+      else if (k === "\x1b[A" || k === "k") cursor = Math.max(0, cursor - 1);
+      else if (k === "\x1b[B" || k === "j") cursor++;
+      else if (k === "\r" || k === "\n" || k === " ") toggle();
+      render();
+    }
   } finally {
-    rl.close();
+    cleanup();
   }
   return 0;
 }
