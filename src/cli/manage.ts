@@ -1,6 +1,6 @@
 import type { ServerCfg, ToolCfg } from "../shared/config";
 import { addServer, addTool, externalizeSecrets, externalizeToolSecrets, removeServer, setDisabled } from "../shared/configEdit";
-import { searchRegistry, toServerCfg } from "../shared/registry";
+import { refToName, searchRegistry, toServerCfg } from "../shared/registry";
 
 export async function cmdSearch(query: string | undefined): Promise<number> {
   if (!query) { console.error("usage: mux search <query>"); return 1; }
@@ -21,7 +21,7 @@ async function addFromRegistry(ref: string, as: string | undefined, replace: boo
     return 1;
   }
   const { cfg, requiredEnv } = toServerCfg(hit);
-  const name = as ?? ref.split("/").pop()!.replace(/[^a-z0-9-]/gi, "-");
+  const name = as ?? refToName(ref);
   addServer(name, cfg, { replace });
   console.log(`added: ${name} (${hit.ref})`);
   if (requiredEnv.length)

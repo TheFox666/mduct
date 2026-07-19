@@ -107,6 +107,7 @@ async function main(): Promise<number> {
       return await cmdTool(argv);
     }
     case "add": {
+      if (argv.length === 0) { const { runPicker } = await import("./cli/picker"); return await runPicker(); }
       const { cmdAdd } = await import("./cli/manage");
       return await cmdAdd(argv);
     }

@@ -22,6 +22,11 @@ function baseUrl(): string {
   return process.env.MCPMUX_REGISTRY ?? "https://registry.modelcontextprotocol.io";
 }
 
+/** Default local name for a registry ref (com.gitlab/mcp → mcp). */
+export function refToName(ref: string): string {
+  return ref.split("/").pop()!.replace(/[^a-z0-9-]/gi, "-");
+}
+
 export async function searchRegistry(query: string): Promise<RegistryHit[]> {
   if (process.env.MCPMUX_DEBUG) console.error("[registry] GET", `${baseUrl()}/v0/servers?search=${encodeURIComponent(query)}&limit=30`);
   const res = await fetch(`${baseUrl()}/v0/servers?search=${encodeURIComponent(query)}&limit=30`, {
