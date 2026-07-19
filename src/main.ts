@@ -122,7 +122,7 @@ async function main(): Promise<number> {
     }
     case "doctor": {
       const { cmdDoctor } = await import("./cli/doctor");
-      return cmdDoctor(daemonRequest);
+      return await cmdDoctor();
     }
     case "import": {
       const { cmdImport } = await import("./cli/importCmd");

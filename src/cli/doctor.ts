@@ -1,18 +1,22 @@
 import { discoverClaudeSources } from "../shared/claudeConfigs";
 import { loadConfig } from "../shared/config";
+import { request, socketAlive, socketPath } from "../shared/ipc";
 
 /**
- * `mux doctor` — report, never a gate (always exit 0):
- *  1. overlap: servers attached directly in a Claude config AND served by mux
- *     (their schemas cost context tokens every session) + removal commands.
- *  2. dead servers: mux-configured but not connectable right now.
+ * `mux doctor` — report, never a gate (always exit 0). A read-only report must not spin up a
+ * daemon as a side effect (N4): it queries the daemon only if one is ALREADY running.
+ *  1. overlap: servers attached directly in a Claude config AND served by mux + removal commands.
+ *  2. dead servers: mux-configured but not connectable (only checked when a daemon is up).
  *  3. token estimate per overlapping server (tool count × ~350 tk heuristic).
  */
-export async function cmdDoctor(daemonRequest: (method: string, params: unknown) => Promise<unknown>): Promise<number> {
+export async function cmdDoctor(): Promise<number> {
   const home = process.env.MCPMUX_HOME;
   const sources = discoverClaudeSources(home ? { home } : {});
   const mux = loadConfig().servers;
   const muxNames = new Set(Object.keys(mux).filter((n) => !mux[n]!.disabled));
+  const daemonUp = await socketAlive(socketPath());
+  const ask = (method: string, params: unknown) =>
+    daemonUp ? request(socketPath(), method, params, 8000) : Promise.reject(new Error("daemon not running"));
 
   let overlaps = 0;
   for (const s of sources) {
@@ -23,18 +27,22 @@ export async function cmdDoctor(daemonRequest: (method: string, params: unknown)
     for (const n of both) {
       let estimate = "";
       try {
-        const tools = (await daemonRequest("tools", { server: n })) as unknown[];
+        const tools = (await ask("tools", { server: n })) as unknown[];
         estimate = ` (~${tools.length} Tools ≈ ${Math.round((tools.length * 350) / 1000)}k Tokens/Session)`;
-      } catch { /* estimate is best-effort */ }
+      } catch { /* estimate is best-effort; no daemon → no count */ }
       console.log(`  ${n}${estimate} → entfernen: claude mcp remove ${n}   # in dieser Config`);
     }
   }
   if (overlaps === 0) console.log("✓ keine Überlappung: kein direkt verbundener MCP-Server, den mux schon bedient");
 
+  if (!daemonUp) {
+    console.log("ⓘ Daemon läuft nicht — Server-Erreichbarkeit übersprungen (starte einen Call oder `mux daemon`).");
+    return 0;
+  }
   let dead = 0;
   for (const name of muxNames) {
     try {
-      await daemonRequest("tools", { server: name });
+      await ask("tools", { server: name });
     } catch (e) {
       dead++;
       console.log(`✗ ${name}: unreachable — ${(e as Error).message.split("\n")[0]}`);

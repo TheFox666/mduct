@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { discoverClaudeSources } from "../shared/claudeConfigs";
@@ -9,10 +9,6 @@ import { loadConfig } from "../shared/config";
  * `mux hook install claude` only patches the target settings.json.
  */
 
-// Identifies our entries for idempotency/removal. Deliberately NOT "mux hook run":
-// in dev mode the command is "bun src/main.ts hook run …" — no "mux" in it.
-const MARKER = " hook run ";
-
 function selfBin(): string {
   // compiled binary → its own path; dev mode → "bun src/main.ts"
   const entry = process.argv[1] ?? "";
@@ -20,7 +16,12 @@ function selfBin(): string {
 }
 
 export function hookRunSessionStart(): number {
-  const cfg = loadConfig();
+  let cfg;
+  try { cfg = loadConfig(); } catch (e) {
+    // a broken config must never turn every Claude session start into error noise (#24)
+    console.log(`(mcpmux: config unreadable — ${(e as Error).message})`);
+    return 0;
+  }
   const names = Object.entries(cfg.servers).filter(([, s]) => !s.disabled);
   if (names.length) {
     console.log("MCP tools available via `mux` CLI (details: mux tools <server>; call: mux call <server> <tool> key=value):");
@@ -44,11 +45,15 @@ export async function hookRunPreToolUse(): Promise<number> {
   const input = await new Response(Bun.stdin.stream()).text();
   let toolName = "";
   try { toolName = (JSON.parse(input) as { tool_name?: string }).tool_name ?? ""; } catch { return 0; }
-  const m = toolName.match(/^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/);
-  if (!m) return 0;
-  const [, server, tool] = m;
-  const cfg = loadConfig();
-  if (!server || !cfg.servers[server] || cfg.servers[server].disabled) return 0; // not ours — stay silent
+  // mcp__<server>__<tool>: split at the first "__" after the mcp__ prefix (N8)
+  if (!toolName.startsWith("mcp__")) return 0;
+  const rest = toolName.slice(5);
+  const sep = rest.indexOf("__");
+  if (sep < 1) return 0;
+  const server = rest.slice(0, sep), tool = rest.slice(sep + 2);
+  let cfg;
+  try { cfg = loadConfig(); } catch { return 0; }
+  if (!cfg.servers[server] || cfg.servers[server].disabled) return 0; // not ours — stay silent
   console.log(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
@@ -77,8 +82,14 @@ export function hookInstall(argv: string[]): number {
   const settings: Settings = existsSync(settingsPath) ? (JSON.parse(readFileSync(settingsPath, "utf8")) as Settings) : {};
   const hooks = (settings.hooks ??= {});
 
+  // Remove only OUR hook command, not the whole entry — a foreign hook sharing the same
+  // entry/array must survive (N5). Match on the command tail, not a loose substring (#17),
+  // and null-guard entries whose `hooks` array is missing/malformed.
+  const isOurs = (cmd: string) => cmd.endsWith("hook run session-start") || cmd.endsWith("hook run pre-tool-use");
   const strip = (arr: HookEntry[] | undefined): HookEntry[] =>
-    (arr ?? []).filter((e) => !e.hooks.some((h) => h.command.includes(MARKER)));
+    (arr ?? [])
+      .map((e) => ({ ...e, hooks: (e.hooks ?? []).filter((h) => !isOurs(h.command)) }))
+      .filter((e) => e.hooks.length > 0); // drop entries left empty by our removal
   hooks.SessionStart = strip(hooks.SessionStart);
   hooks.PreToolUse = strip(hooks.PreToolUse);
 
@@ -86,7 +97,9 @@ export function hookInstall(argv: string[]): number {
     hooks.SessionStart.push({ hooks: [{ type: "command", command: `${selfBin()} hook run session-start` }] });
     hooks.PreToolUse.push({ matcher: "mcp__.*", hooks: [{ type: "command", command: `${selfBin()} hook run pre-tool-use` }] });
   }
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+  const tmp = `${settingsPath}.${process.pid}.tmp`; // atomic: never corrupt Claude settings (#18)
+  writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n");
+  renameSync(tmp, settingsPath);
   console.log(`${remove ? "removed from" : "installed into"}: ${settingsPath}`);
   if (!remove) console.log("Hinweis: wirkt ab der nächsten Claude-Session.");
   return 0;
