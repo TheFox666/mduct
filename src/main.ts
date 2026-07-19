@@ -14,8 +14,8 @@ CALL & RUN
   call <server> <tool> [key=value …]   invoke an MCP tool. key=value = scalar (coerced);
        [key:=<json> …]                        key:=<json> = a JSON value (arrays/objects/typed);
        [--args '<json>' | - | @file]          --args merges an object (- = stdin, @file = a file)
-       [--timeout <s>] [--raw] [--compact]    --raw = full compact envelope; --compact minifies JSON output
-       [--full]                               --full bypasses the oversized-list guard (also: to pipe)
+       [--timeout <s>] [--raw] [--json]       --raw = full envelope; --json = only the JSON payload (pipe-ready)
+       [--compact] [--full]                   --compact minifies output; --full bypasses the oversized-list guard
   run <tool> [args …]                  run a CLI tool (kubectl/aws/…) with its stored env/wrapping
   tools <server>                       list a server's tools (compact — no schemas)
   schema <server> <tool>               full JSON schema of one tool
@@ -57,15 +57,17 @@ INSTANCES
   No profile → the default ~/.config/mcpmux/. \`mux status\` shows which instance answered.
 
 PIPING (keep big outputs OUT of your context — lossless)
-  \`mux call\` prints the tool's JSON to stdout, so pipe it through jq: only the
-  filtered result becomes the tool output in your context, the full blob never does.
-  Add --full when piping a big list (it bypasses the oversized-list guard).
-    # 20 issues as 4 fields each, not full bodies (measured: ~13.7k → ~1.1k chars):
-    mux call linear-server list_issues limit=20 --full | jq -c '.issues|map({id,title,status,priority:.priority.name})'
+  --json emits ONLY the JSON payload (prose stripped), so \`| jq\` works on any
+  server; only the filtered result lands in your context, the full blob never does.
+  (--json also bypasses the oversized-list guard, since you're slimming it yourself.)
+    # 20 issues as a few fields each, not full bodies (measured: ~13.7k → ~1.1k chars):
+    mux call linear-server list_issues limit=20 --json | jq -c '.issues|map({id,title,status})'
+    # GitLab prefixes prose ("Found N …") — --json strips it so this still pipes clean:
+    mux call gitlab list_merge_requests project_id=grp/proj state=opened --json | jq -c 'map({iid,title,web_url})'
     # don't know the shape? peek once, then project the fields you need:
-    mux call <server> <tool> --full | jq 'if type=="array" then .[0] else . end | keys'
+    mux call <server> <tool> --json | jq 'if type=="array" then .[0] else . end | keys'
     # combine calls — list, then fetch each (project the second call too):
-    mux call <server> list_x --full | jq -r '.[].id' | while read i; do mux call <server> get_x id=$i | jq -c '{id,title}'; done
+    mux call <server> list_x --json | jq -r '.[].id' | while read i; do mux call <server> get_x id=$i --json | jq -c '{id,title}'; done
 
 EXAMPLES
   mux call gitlab list_issues state=opened labels:='["bug"]'
@@ -141,7 +143,8 @@ async function main(): Promise<number> {
     }
     case "call": {
       const raw = boolFlag(argv, "--raw");
-      const full = boolFlag(argv, "--full"); // bypass the size guard: dump it all (or pipe it yourself)
+      const jsonOut = boolFlag(argv, "--json"); // emit only the JSON payload (prose stripped) — clean to pipe
+      const full = boolFlag(argv, "--full"); // bypass the size guard: dump it all (human-readable)
       // compact: explicit --compact/--no-compact wins; otherwise the config default (mux config compact on)
       const noCompact = boolFlag(argv, "--no-compact");
       const compactFlag = boolFlag(argv, "--compact");
@@ -167,7 +170,7 @@ async function main(): Promise<number> {
       const ARGS_ERR = /-32602|validation|invalid arguments?|is required|missing|no tool|not found|unknown tool/i;
       try {
         const res = await daemonRequest("call", { server, tool, args: parseArgs(pairs, argsJson), timeoutMs }, ipcTimeout) as { content?: { type?: string; text?: string }[]; isError?: boolean };
-        const code = printResult(res as any, { raw, compact, full, warnAbove, server, tool });
+        const code = printResult(res as any, { raw, json: jsonOut, compact, full, warnAbove, server, tool });
         if (code === 1 && !raw) { // real server/arg error only — the size guard (2) isn't one
           const text = (res.content ?? []).map((c) => (c.type === "text" ? c.text : "")).join(" ");
           if (ARGS_ERR.test(text)) process.stderr.write((await callErrorHint(server, tool)).replace(/^\n/, "") + "\n");

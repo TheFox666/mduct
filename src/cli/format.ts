@@ -17,14 +17,27 @@ function minifyIfJson(s: string): string {
   try { return JSON.stringify(JSON.parse(s)); } catch { return s; }
 }
 
+/** The JSON payload inside a call result, wherever it sits. A server may return the data in its own
+ *  text block alongside a prose summary block (GitLab: "Found 3275 merge requests" + the JSON), so
+ *  we can't just parse the joined output — scan the text blocks and take the largest that parses. */
+function jsonPayload(res: { content?: unknown[] }): unknown | undefined {
+  let best: { data: unknown; len: number } | undefined;
+  for (const c0 of res.content ?? []) {
+    const c = c0 as { type?: string; text?: string };
+    if (c.type !== "text" || typeof c.text !== "string") continue;
+    const t = c.text.trimStart();
+    if (t[0] !== "{" && t[0] !== "[") continue;
+    try { const data = JSON.parse(c.text); if (!best || c.text.length > best.len) best = { data, len: c.text.length }; } catch { /* not JSON */ }
+  }
+  return best?.data;
+}
+
 /** A projectable list found inside a call result: the dominant array + which item fields are worth
  *  keeping (short scalars / id-like) vs dropping (long strings, nested). Null when there's nothing
- *  to slim (non-JSON, no array, or no short fields — don't cry wolf on data we can't help with). */
+ *  to slim (no array, or no short fields — don't cry wolf on data we can't help with). */
 type Recipe = { path: string; keep: string[]; drop: string[]; count: number };
-const ID_LIKE = /^(id|iid|key|identifier|name|title|state|status|url|slug|number|priority|type|label)s?$/i;
-function projectionRecipe(text: string): Recipe | null {
-  let data: unknown;
-  try { data = JSON.parse(text.trimStart()); } catch { return null; }
+const ID_LIKE = /^(id|iid|key|identifier|name|title|state|status|url|web_url|weburl|href|link|permalink|slug|number|priority|type|label)s?$/i;
+function projectionRecipe(data: unknown): Recipe | null {
   // dominant array = the value itself, or the object property holding the most items
   let arr: unknown[] | null = null, path = ".";
   if (Array.isArray(data)) arr = data;
@@ -63,14 +76,15 @@ function projectionRecipe(text: string): Recipe | null {
   return { path, keep, drop, count: arr.length };
 }
 
-/** The stderr warning shown in place of an oversized dump: size, a ready --full|jq projection with
- *  the real field names, what got dropped, and the escape hatches (narrow / --full). */
+/** The stderr warning shown in place of an oversized dump: size, a ready --json|jq projection with
+ *  the real field names, what got dropped, and the escape hatches (narrow / --full). Uses --json
+ *  (clean JSON payload) so the pipe works even when the server prefixes prose (GitLab). */
 function oversizeWarning(chars: number, server: string, tool: string, r: Recipe): string {
   const proj = `${r.path === "." ? "" : `${r.path}|`}map({${r.keep.join(",")}})`;
   const dropNote = r.drop.length ? `   dropped (long/nested): ${r.drop.slice(0, 8).join(" ")}` : "";
   return [
     `⚠ ${r.count} items, ~${Math.round(chars / 1024)} KB — too big for context. Slim it, don't dump it:`,
-    `  project fields:  mux call ${server} ${tool} … --full | jq -c '${proj}'`,
+    `  project fields:  mux call ${server} ${tool} … --json | jq -c '${proj}'`,
     `  fields kept:     ${r.keep.join(" ")}${dropNote}`,
     `  or narrow:       add filter args (limit=/state=/query=…) — mux schema ${server} ${tool}`,
     `  or full anyway:  re-run with --full`,
@@ -79,11 +93,18 @@ function oversizeWarning(chars: number, server: string, tool: string, r: Recipe)
 
 /** Print a CallResult per the output contract. Returns process exit code.
  *  raw → the full envelope as COMPACT json (token-efficient; pipe to `jq .` if you want it pretty).
+ *  json → ONLY the JSON payload (the data block, prose stripped), minified — clean to pipe to jq
+ *    on any server; falls back to the text output when the result holds no JSON.
  *  compact → losslessly minify any JSON-parseable text content (strips server pretty-print).
  *  warnAbove (chars) → when the printed output exceeds it and holds a projectable list, print a
- *    slim-it-first warning to stderr instead of the blob (return 2); --full bypasses the guard. */
-export function printResult(res: { content: unknown[]; isError?: boolean }, opts: { raw?: boolean; compact?: boolean; full?: boolean; warnAbove?: number; server?: string; tool?: string }): number {
+ *    slim-it-first warning to stderr instead of the blob (return 2); --full/--json bypass the guard. */
+export function printResult(res: { content: unknown[]; isError?: boolean }, opts: { raw?: boolean; json?: boolean; compact?: boolean; full?: boolean; warnAbove?: number; server?: string; tool?: string }): number {
   if (opts.raw) { console.log(JSON.stringify(res)); return res.isError ? 1 : 0; }
+  if (opts.json && !res.isError) {
+    const payload = jsonPayload(res);
+    if (payload !== undefined) { console.log(JSON.stringify(payload)); return 0; }
+    // no JSON in the result → fall through to normal text output (nothing to pipe)
+  }
   const lines: string[] = [];
   let dir: string | null = null;
   for (const [i, c0] of (res.content ?? []).entries()) {
@@ -100,9 +121,10 @@ export function printResult(res: { content: unknown[]; isError?: boolean }, opts
   const text = lines.join("\n");
   if (res.isError) { console.error(text); return 1; }
   // size guard: keep an oversized dump out of the caller's context (only when we can suggest a
-  // projection — otherwise printing is the only useful thing we can do).
-  if (!opts.full && opts.warnAbove && text.length > opts.warnAbove) {
-    const r = projectionRecipe(text);
+  // projection — otherwise printing is the only useful thing we can do). Find the JSON among the
+  // content blocks, not in the joined text, so a prose-prefixed result (GitLab) still triggers.
+  if (!opts.full && !opts.json && opts.warnAbove && text.length > opts.warnAbove) {
+    const r = projectionRecipe(jsonPayload(res));
     if (r) { process.stderr.write(`${oversizeWarning(text.length, opts.server ?? "<server>", opts.tool ?? "<tool>", r)}\n`); return 2; }
   }
   console.log(text);

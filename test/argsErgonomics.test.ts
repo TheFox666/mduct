@@ -47,7 +47,30 @@ describe("printResult oversized-list guard (warnAbove)", () => {
     expect(r.err).toContain(".issues|map({"); // dominant array projected
     expect(r.err).toMatch(/id.*title.*status/); // short/id-like fields kept
     expect(r.err).toContain("description"); // long field named as dropped
-    expect(r.err).toContain("--full");
+    expect(r.err).toContain("--json"); // the pipe-clean recipe
+    expect(r.err).toContain("--full"); // the dump-it-all escape hatch
+  });
+
+  // GitLab returns TWO text blocks: a prose summary + the JSON. The guard must find the JSON among
+  // the blocks (not in the joined text) and --json must strip the prose so the pipe stays clean.
+  const gitlabBlocks = [
+    { type: "text", text: "Found 40 merge requests" },
+    { type: "text", text: JSON.stringify(Array.from({ length: 40 }, (_, i) => ({ id: i, iid: 1000 + i, title: `MR ${i}`, web_url: `https://x/${i}`, state: "opened", description: "d".repeat(200) }))) },
+  ];
+  test("guard fires on a prose-prefixed two-block result (GitLab-style)", () => {
+    const r = run(() => printResult({ content: gitlabBlocks }, { compact: true, warnAbove: 200, server: "gitlab", tool: "list_merge_requests" }));
+    expect(r.code).toBe(2);
+    expect(r.out).toBe("");
+    expect(r.err).toContain("map({"); // top-level array → no ".issues" prefix
+    expect(r.err).toMatch(/iid.*title.*web_url/); // id-like incl. the link kept
+    expect(r.err).toContain("description"); // dropped
+  });
+  test("--json emits only the JSON payload, stripping the prose block", () => {
+    const r = run(() => printResult({ content: gitlabBlocks }, { json: true }));
+    expect(r.code).toBe(0);
+    expect(r.err).toBe("");
+    expect(r.out).not.toContain("Found 40"); // prose gone
+    expect(JSON.parse(r.out)).toHaveLength(40); // clean, parseable payload
   });
   test("--full bypasses the guard: prints the (compact) blob, returns 0", () => {
     const r = call({ full: true });
