@@ -54,15 +54,28 @@ export function removeServer(name: string): void {
   save(cfg);
 }
 
+// Keys that hold credentials — only these move to the secret store. Wrapping/config env like
+// PATH, NODE_PATH, HOST, URL stay LITERAL (not secrets; moving them pollutes the store + breaks
+// nested ${refs}). Long words match as substrings; short ambiguous ones (PAT, KEY, PW) only as a
+// whole underscore-separated segment so NODE_PATH (segment "PATH") is NOT mistaken for "PAT".
+const SECRET_WORDS = ["TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "APIKEY", "PRIVATEKEY"];
+const SECRET_SEGMENTS = new Set(["PAT", "KEY", "AUTH", "PW", "APIKEY"]);
+function isSecretKey(k: string): boolean {
+  const up = k.toUpperCase();
+  if (SECRET_WORDS.some((w) => up.includes(w))) return true;
+  return up.split(/[^A-Z0-9]+/).some((seg) => SECRET_SEGMENTS.has(seg));
+}
+
 /**
- * Move literal values of an env/header record into the secret store, replacing each with a
- * ${NAME_KEY} reference. Values already written as ${...} references are left alone. Keeps
- * plaintext credentials out of servers.jsonc (import path N1, manual --env #26).
+ * Move literal values of SECRET-looking env/header keys into the secret store, replacing each
+ * with a ${NAME_KEY} reference. Values already written as ${...} references, and non-secret
+ * keys, are left alone. Keeps plaintext credentials out of servers.jsonc (N1, #26).
  */
-function externalizeRecord(owner: string, rec: Record<string, string> | undefined): void {
+function externalizeRecord(owner: string, rec: Record<string, string> | undefined, isHeader = false): void {
   if (!rec) return;
   for (const [k, v] of Object.entries(rec)) {
-    if (/^\$\{[\w]+\}$/.test(v)) continue; // already a reference
+    if (/\$\{[\w]+\}/.test(v)) continue; // already contains a reference — leave it
+    if (!isHeader && !isSecretKey(k)) continue; // env: only credential-looking keys
     const ref = `${owner}_${k}`.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
     setSecret(ref, v);
     rec[k] = `\${${ref}}`;
@@ -72,7 +85,7 @@ function externalizeRecord(owner: string, rec: Record<string, string> | undefine
 export function externalizeSecrets(serverName: string, server: ServerCfg): ServerCfg {
   const s = structuredClone(server);
   externalizeRecord(serverName, s.env);
-  externalizeRecord(serverName, s.headers);
+  externalizeRecord(serverName, s.headers, true); // headers (Authorization: Bearer …) are always sensitive
   return s;
 }
 

@@ -43,6 +43,16 @@ test("add --env with a literal value stores a secret and writes a ${ref} (#26)",
   expect(secrets).toContain("glpat-literal"); // stored in the 0600 file instead
 });
 
+test("wrapping env like NODE_PATH stays literal — not treated as a secret", async () => {
+  const dir2 = mkdtempSync(join(tmpdir(), "mux-"));
+  const env2 = { ...env, MCPMUX_CONFIG: join(dir2, "c.jsonc"), MCPMUX_SECRETS: join(dir2, "s.json") };
+  const p = Bun.spawn([process.execPath, "src/main.ts", "add", "pw", "--tool", "--env", "NODE_PATH=/opt/pw", "--", "npx", "playwright"], { env: env2, stdout: "pipe", stderr: "pipe" });
+  expect(await p.exited).toBe(0);
+  const cfg = readFileSync(env2.MCPMUX_CONFIG!, "utf8");
+  expect(cfg).toContain("/opt/pw"); // NODE_PATH kept in the config, not moved to the store
+  expect(cfg).not.toContain("${"); // no secret ref generated for a non-secret key
+});
+
 test("import normalizes a plaintext token from a Claude config into the store (N1)", async () => {
   const home = mkdtempSync(join(tmpdir(), "mux-home-"));
   writeFileSync(join(home, ".claude.json"), JSON.stringify({
