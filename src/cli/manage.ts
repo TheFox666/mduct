@@ -1,5 +1,5 @@
 import type { ServerCfg } from "../shared/config";
-import { addServer, removeServer, setDisabled } from "../shared/configEdit";
+import { addServer, externalizeSecrets, removeServer, setDisabled } from "../shared/configEdit";
 import { searchRegistry, toServerCfg } from "../shared/registry";
 
 export async function cmdSearch(query: string | undefined): Promise<number> {
@@ -80,7 +80,8 @@ function cmdAddManual(argv: string[]): number {
   const cfg: ServerCfg = url
     ? { url, ...(Object.keys(env).length ? { headers: env } : {}), ...(note ? { note } : {}) }
     : { command: command[0]!, args: command.slice(1), ...(Object.keys(env).length ? { env } : {}), ...(note ? { note } : {}) };
-  addServer(name, cfg, { replace });
+  // literal --env/--header values go to the secret store; the config keeps ${refs} (#26)
+  addServer(name, externalizeSecrets(name, cfg), { replace });
   console.log(`added: ${name} — try: mux tools ${name}`);
   return 0;
 }

@@ -8,7 +8,8 @@ const HELP = `mcpmux — MCP multiplexer. Commands:
   mux servers                 mux index
   mux add <name> --url <u> | -- <cmd…>   mux remove/enable/disable <name>
   mux import [name…]          mux search <query>
-  mux doctor                  mux hook install claude [--remove]
+  mux secret set/list/rm <NAME>   mux doctor
+  mux hook install claude [--remove]
   mux logs [server]           mux status
   mux daemon [--stop]         mux help
 Config: ${configPath()}`;
@@ -105,6 +106,10 @@ async function main(): Promise<number> {
     case "search": {
       const { cmdSearch } = await import("./cli/manage");
       return await cmdSearch(argv[0]);
+    }
+    case "secret": {
+      const { cmdSecret } = await import("./cli/secret");
+      return await cmdSecret(argv);
     }
     case "hook": {
       const sub = argv.shift();

@@ -1,5 +1,5 @@
 import { discoverClaudeSources } from "../shared/claudeConfigs";
-import { addServer } from "../shared/configEdit";
+import { addServer, externalizeSecrets } from "../shared/configEdit";
 
 /**
  * `mux import` — list candidates from all Claude configs (source\tname\tkind).
@@ -39,8 +39,10 @@ export function cmdImport(argv: string[]): number {
       console.error(`"${name}" not found in any Claude config — candidates: ${known}`);
       return 1;
     }
-    addServer(as ?? name, hit.cfg, { replace });
-    console.log(`imported: ${as ?? name} (from ${hit.source})`);
+    // Claude configs carry plaintext tokens in env — move them to the secret store on import (N1)
+    const target = as ?? name;
+    addServer(target, externalizeSecrets(target, hit.cfg), { replace });
+    console.log(`imported: ${target} (from ${hit.source})`);
   }
   return 0;
 }
