@@ -56,6 +56,7 @@ async function main(): Promise<number> {
   switch (cmd) {
     case "daemon": {
       if (boolFlag(argv, "--stop")) { await request(socketPath(), "shutdown", {}, 3000).catch(() => {}); return 0; }
+      if (boolFlag(argv, "--install")) { const { installSystemd } = await import("./cli/systemd"); return await installSystemd(); }
       const { startDaemon } = await import("./daemon/daemon");
       await startDaemon();
       await new Promise(() => {}); // run forever
