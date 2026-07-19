@@ -99,6 +99,20 @@ async function daemonRequest(method: string, params: unknown, timeoutMs?: number
   }
 }
 
+/** After a failed `call`, fetch the tool's signature (or near-name suggestions) so the fix is obvious. */
+async function callErrorHint(server: string, tool: string): Promise<string> {
+  try {
+    const { toolSignature } = await import("./cli/format");
+    const tools = (await daemonRequest("tools", { server })) as { name: string; inputSchema?: unknown }[];
+    const t = tools.find((x) => x.name === tool);
+    if (t) return `\n  expected: ${tool}${toolSignature(t.inputSchema)}  (full schema: mux schema ${server} ${tool})`;
+    const near = tools.map((x) => x.name).filter((n) => n.includes(tool) || tool.includes(n)).slice(0, 5);
+    return `\n  no tool "${tool}" on "${server}"${near.length ? ` — did you mean: ${near.join(", ")}` : ""}  (list: mux tools ${server})`;
+  } catch {
+    return ""; // hint is best-effort; never mask the original error
+  }
+}
+
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   const cmd = argv.shift() ?? "help";
@@ -114,19 +128,35 @@ async function main(): Promise<number> {
     case "call": {
       const raw = boolFlag(argv, "--raw");
       const timeout = flag(argv, "--timeout");
-      const argsJson = flag(argv, "--args");
+      let argsJson = flag(argv, "--args");
+      // --args - reads JSON from stdin; --args @file from a file — heredoc complex args with no shell quoting
+      if (argsJson === "-") argsJson = await new Response(Bun.stdin.stream()).text();
+      else if (argsJson?.startsWith("@")) { const { readFileSync } = await import("node:fs"); argsJson = readFileSync(argsJson.slice(1), "utf8"); }
       const [server, tool, ...pairs] = argv;
-      if (!server || !tool) { console.error("usage: mux call <server> <tool> [k=v ...] — see: mux servers"); return 1; }
+      if (!server || !tool) { console.error("usage: mux call <server> <tool> [key=value ...] — see: mux servers"); return 1; }
       let timeoutMs: number | undefined;
       if (timeout !== undefined) {
         const n = Number(timeout);
         if (!Number.isFinite(n) || n <= 0) { console.error(`bad --timeout "${timeout}" — seconds, e.g. --timeout 30`); return 1; }
         timeoutMs = n * 1000;
       }
-      // IPC wait must outlast the tool timeout, or a legit long call is killed at the 120s default (#11)
-      const ipcTimeout = timeoutMs ? timeoutMs + 10_000 : undefined;
-      const res = await daemonRequest("call", { server, tool, args: parseArgs(pairs, argsJson), timeoutMs }, ipcTimeout);
-      return printResult(res as any, raw);
+      const ipcTimeout = timeoutMs ? timeoutMs + 10_000 : undefined; // IPC wait must outlast the tool timeout (#11)
+      // only an ARGS / not-found error gets a signature hint — a domain failure (a tool that ran
+      // and errored for its own reasons) shouldn't be nagged with "expected: <signature>"
+      const ARGS_ERR = /-32602|validation|invalid arguments?|is required|missing|no tool|not found|unknown tool/i;
+      try {
+        const res = await daemonRequest("call", { server, tool, args: parseArgs(pairs, argsJson), timeoutMs }, ipcTimeout) as { content?: { type?: string; text?: string }[]; isError?: boolean };
+        const code = printResult(res as any, raw);
+        if (code !== 0 && !raw) {
+          const text = (res.content ?? []).map((c) => (c.type === "text" ? c.text : "")).join(" ");
+          if (ARGS_ERR.test(text)) process.stderr.write((await callErrorHint(server, tool)).replace(/^\n/, "") + "\n");
+        }
+        return code;
+      } catch (e) {
+        const msg = String((e as Error).message ?? e);
+        console.error(msg + (ARGS_ERR.test(msg) ? await callErrorHint(server, tool) : ""));
+        return 1;
+      }
     }
     case "tools": {
       const { toolSignature } = await import("./cli/format");

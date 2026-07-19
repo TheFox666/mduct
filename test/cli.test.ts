@@ -27,6 +27,22 @@ test("call autostarts daemon and prints text content", async () => {
   expect(r.out.trim()).toBe("hello");
 });
 
+test("unknown tool → error suggests near tools + list command", async () => {
+  const r = await mux("call", "fix", "ech"); // typo for echo
+  expect(r.code).toBe(1);
+  expect(r.err).toMatch(/no tool "ech" on "fix"/);
+  expect(r.err).toMatch(/did you mean: echo/);
+});
+
+test("--args - reads JSON args from stdin (heredoc-friendly, no shell quoting)", async () => {
+  const p = Bun.spawn([process.execPath, "src/main.ts", "call", "fix", "echo", "--args", "-"], {
+    env, stdin: new Response('{"text":"from stdin"}'), stdout: "pipe", stderr: "pipe",
+  });
+  const [out, code] = await Promise.all([new Response(p.stdout).text(), p.exited]);
+  expect(code).toBe(0);
+  expect(out.trim()).toBe("from stdin");
+});
+
 test("--args json wins for nested payloads", async () => {
   const r = await mux("call", "fix", "echo", "--args", '{"text":"json way"}');
   expect(r.out.trim()).toBe("json way");
