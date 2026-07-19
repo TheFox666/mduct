@@ -8,6 +8,30 @@ import { FileOAuthProvider } from "./oauthProvider";
 export type ToolInfo = { name: string; description?: string; inputSchema?: unknown };
 export type CallResult = { content: unknown[]; isError?: boolean };
 
+/**
+ * Refine the CLI's heuristically-coerced scalar args against the tool's DECLARED param types — the
+ * inputSchema is the authoritative source, so a numeric id a server wants as a STRING (GitLab's
+ * project_id) is sent as "38077343" not the number 38077343 (which would -32602). Only acts when the
+ * declared type is unambiguous about scalar kind; a union like ["string","integer"] keeps the CLI's
+ * value (already a valid member). Args from `:=`/`--args` are non-string JSON and pass through.
+ */
+export function normalizeArgs(args: Record<string, unknown>, inputSchema: unknown): Record<string, unknown> {
+  const props = (inputSchema as { properties?: Record<string, { type?: unknown }> } | undefined)?.properties;
+  if (!props || !args || typeof args !== "object") return args;
+  const out: Record<string, unknown> = { ...args };
+  for (const [k, v] of Object.entries(out)) {
+    const t = props[k]?.type;
+    const types = (Array.isArray(t) ? t : [t]).filter((x): x is string => typeof x === "string");
+    if (types.length === 0) continue;
+    const has = (x: string) => types.includes(x);
+    const numeric = has("integer") || has("number");
+    if (has("string") && !numeric) { if (typeof v === "number" || typeof v === "boolean") out[k] = String(v); }
+    else if (numeric && !has("string") && typeof v === "string" && /^-?\d+(?:\.\d+)?$/.test(v) && Number.isFinite(Number(v))) out[k] = Number(v);
+    else if (has("boolean") && !has("string") && (v === "true" || v === "false")) out[k] = v === "true";
+  }
+  return out;
+}
+
 export class ServerConnection {
   private client: Client | null = null;
   private connecting: Promise<Client> | null = null;
@@ -77,8 +101,11 @@ export class ServerConnection {
     this.active++;
     const real = this.queue.then(async () => {
       const client = await this.ensure();
+      // schema-aware coercion: type each scalar arg by the tool's declared param type (cached
+      // listTools). Fail-safe — if the schema can't be fetched, args pass through unchanged.
+      const schema = await this.listTools().then((ts) => ts.find((t) => t.name === tool)?.inputSchema).catch(() => undefined);
       try {
-        return (await client.callTool({ name: tool, arguments: args })) as CallResult;
+        return (await client.callTool({ name: tool, arguments: normalizeArgs(args, schema) })) as CallResult;
       } catch (e) {
         // close BEFORE drop: drop() only nulls refs, it never kills the child. The common case is a
         // LIVE transport that returned an error (bad args, server-side throw) — dropping without
