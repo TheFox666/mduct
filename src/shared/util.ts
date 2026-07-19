@@ -1,4 +1,4 @@
-/** Strip // and block comments from JSONC — string-aware, no dep. */
+/** Strip // and block comments AND trailing commas from JSONC — string-aware, no dep. */
 export function stripJsonc(s: string): string {
   let out = "", inStr = false, inLine = false, inBlock = false;
   for (let i = 0; i < s.length; i++) {
@@ -9,6 +9,12 @@ export function stripJsonc(s: string): string {
     if (c === '"') { inStr = true; out += c; continue; }
     if (c === "/" && n === "/") { inLine = true; continue; }
     if (c === "/" && n === "*") { inBlock = true; i++; continue; }
+    // trailing comma: a comma followed only by whitespace before } or ] — drop it
+    if (c === ",") {
+      let j = i + 1;
+      while (j < s.length && /\s/.test(s[j]!)) j++;
+      if (s[j] === "}" || s[j] === "]") continue; // skip the comma, keep the whitespace
+    }
     out += c;
   }
   return out;

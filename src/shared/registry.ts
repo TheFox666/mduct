@@ -6,7 +6,7 @@ type RegistryEntry = {
     name: string; description?: string; version?: string;
     remotes?: { type: string; url: string }[];
     packages?: {
-      registryType: string; identifier: string; runtimeHint?: string;
+      registryType: string; identifier: string; version?: string; runtimeHint?: string;
       environmentVariables?: { name: string; description?: string; isRequired?: boolean; isSecret?: boolean }[];
     }[];
   };
@@ -43,19 +43,27 @@ export async function searchRegistry(query: string): Promise<RegistryHit[]> {
  */
 export function toServerCfg(hit: RegistryHit): { cfg: ServerCfg; requiredEnv: string[] } {
   const note = hit.description || hit.ref;
-  const remote = hit.entry.remotes?.find((r) => ["streamable-http", "http", "sse"].includes(r.type));
+  // http remotes only — an "sse" remote needs a different transport we don't wire yet (N2)
+  const remote = hit.entry.remotes?.find((r) => ["streamable-http", "http"].includes(r.type));
   if (remote) return { cfg: { url: remote.url, note }, requiredEnv: [] };
 
   const pkg = hit.entry.packages?.find((p) => p.registryType === "npm")
     ?? hit.entry.packages?.find((p) => p.registryType === "pypi");
   if (!pkg) throw new Error(`"${hit.ref}" has no usable install method (no http remote, no npm/pypi package) — add it manually: mux add <name> -- <command…>`);
 
+  // identifier is registry-controlled → validate before it becomes argv: a leading '-' would
+  // be parsed by npx/uvx as a flag (injection) (#16)
+  if (!/^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i.test(pkg.identifier))
+    throw new Error(`registry package identifier "${pkg.identifier}" is not a plain package name — refusing to install`);
+  // pin to the registry version so what `mux search` showed is what runs, not npx latest (#16)
+  const spec = pkg.version ? `${pkg.identifier}@${pkg.version}` : pkg.identifier;
+
   const required = (pkg.environmentVariables ?? []).filter((v) => v.isRequired).map((v) => v.name);
   const env: Record<string, string> = {};
   for (const v of required) env[v] = `\${${v}}`;
   const cfg: ServerCfg =
     pkg.registryType === "npm"
-      ? { command: "npx", args: ["-y", pkg.identifier], ...(required.length ? { env } : {}), note }
-      : { command: "uvx", args: [pkg.identifier], ...(required.length ? { env } : {}), note };
+      ? { command: "npx", args: ["-y", spec], ...(required.length ? { env } : {}), note }
+      : { command: "uvx", args: [spec], ...(required.length ? { env } : {}), note };
   return { cfg, requiredEnv: required };
 }

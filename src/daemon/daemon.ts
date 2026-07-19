@@ -1,4 +1,5 @@
-import { existsSync, watch } from "node:fs";
+import { mkdirSync, watch } from "node:fs";
+import { basename, dirname } from "node:path";
 import { configPath, loadConfig, type Config } from "../shared/config";
 import { ServerConnection } from "./connection";
 import { serveIpc, socketAlive, socketPath } from "../shared/ipc";
@@ -30,16 +31,26 @@ export async function startDaemon(): Promise<{ stop(): Promise<void> }> {
     return c;
   };
 
-  // hot reload: close everything on config change; connections re-establish lazily
-  const watcher = existsSync(configPath())
-    ? watch(configPath(), () => {
-        try {
-          config = loadConfig();
-          for (const [n, c] of conns) void c.close().then(() => conns.delete(n));
-          log("config reloaded");
-        } catch (e) { log(`config reload FAILED: ${(e as Error).message}`); }
-      })
-    : null;
+  // Hot reload: watch the DIRECTORY (not the file) so it survives editor rename-replace and
+  // works even when the config doesn't exist at boot (#6). Only close connections whose config
+  // actually changed or was removed — an unrelated edit must not disturb a live connection (#7).
+  const cfgFile = configPath();
+  mkdirSync(dirname(cfgFile), { recursive: true, mode: 0o700 }); // watcher needs the dir to exist
+  const reload = () => {
+    let next: Config;
+    try { next = loadConfig(); } catch (e) { log(`config reload FAILED: ${(e as Error).message}`); return; }
+    const closed: string[] = [];
+    for (const [n, c] of [...conns]) {
+      const before = JSON.stringify(config.servers[n]);
+      const after = JSON.stringify(next.servers[n]);
+      if (before !== after) { conns.delete(n); lastUsed.delete(n); void c.close(); closed.push(n); } // delete BEFORE close (#7 race)
+    }
+    config = next;
+    log(`config reloaded${closed.length ? ` (reconnecting: ${closed.join(", ")})` : ""}`);
+  };
+  const watcher = watch(dirname(cfgFile), (_evt, fname) => {
+    if (fname === null || fname === basename(cfgFile)) reload();
+  });
 
   // idle sweep
   const sweep = setInterval(() => {

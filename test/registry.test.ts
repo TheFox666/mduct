@@ -45,11 +45,16 @@ describe("searchRegistry", () => {
     expect(toServerCfg(hits[0]!).cfg).toMatchObject({ url: "https://gitlab.com/api/v4/mcp" });
   });
 
-  test("maps npm packages to npx stdio configs with env requirements", async () => {
+  test("maps npm packages to npx stdio configs, PINNED to the registry version (#16)", async () => {
     const hits = await searchRegistry("Filesystem");
     const { cfg, requiredEnv } = toServerCfg(hits[0]!);
-    expect(cfg).toMatchObject({ command: "npx", args: ["-y", "remote-filesystem-mcp-server"] });
+    expect(cfg).toMatchObject({ command: "npx", args: ["-y", "remote-filesystem-mcp-server@0.1.2"] });
     expect(requiredEnv).toEqual(["GCS_BUCKET"]);
     expect(cfg.env).toMatchObject({ GCS_BUCKET: "${GCS_BUCKET}" });
+  });
+
+  test("rejects a package identifier that looks like a flag (#16 injection)", async () => {
+    const hit = { ref: "x/y", description: "", entry: { name: "x/y", packages: [{ registryType: "npm", identifier: "-rf", version: "1.0.0" }] } };
+    expect(() => toServerCfg(hit as any)).toThrow(/identifier/i);
   });
 });
