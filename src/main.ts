@@ -100,6 +100,15 @@ async function main(): Promise<number> {
       const { cmdSearch } = await import("./cli/manage");
       return await cmdSearch(argv[0]);
     }
+    case "hook": {
+      const sub = argv.shift();
+      const { hookInstall, hookRunPreToolUse, hookRunSessionStart } = await import("./cli/hook");
+      if (sub === "install" && argv[0] === "claude") { argv.shift(); return hookInstall(argv); }
+      if (sub === "run" && argv[0] === "session-start") return hookRunSessionStart();
+      if (sub === "run" && argv[0] === "pre-tool-use") return await hookRunPreToolUse();
+      console.error("usage: mux hook install claude [--settings <file>] [--remove] | mux hook run session-start|pre-tool-use");
+      return 1;
+    }
     case "doctor": {
       const { cmdDoctor } = await import("./cli/doctor");
       return cmdDoctor(daemonRequest);
