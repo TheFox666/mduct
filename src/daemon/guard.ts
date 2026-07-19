@@ -5,10 +5,11 @@ function match(pat: string, name: string): boolean {
   return re.test(name);
 }
 
-/** deny beats allow; empty/missing allow = allow all. */
+/** deny beats allow; a PRESENT allow-list is authoritative (empty = deny all); a MISSING allow = allow all.
+ *  A guard must fail CLOSED: `allow: []` means "nothing", not "everything" (the old `.length > 0` fell open). */
 export function guardAllows(g: { allow?: string[]; deny?: string[] } | undefined, tool: string): boolean {
   if (!g) return true;
   if (g.deny?.some((p) => match(p, tool))) return false;
-  if (g.allow && g.allow.length > 0) return g.allow.some((p) => match(p, tool));
+  if (g.allow) return g.allow.some((p) => match(p, tool)); // [] ⇒ no match ⇒ deny all (fail closed)
   return true;
 }

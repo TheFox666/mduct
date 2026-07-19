@@ -10,4 +10,9 @@ describe("guardAllows", () => {
     expect(guardAllows(g, "list_issues")).toBe(true);
     expect(guardAllows(g, "create_issue")).toBe(false);
   });
+  test("a present-but-empty allow denies all — fails CLOSED, not open (#3)", () => {
+    expect(guardAllows({ allow: [] }, "anything")).toBe(false);
+    expect(guardAllows({}, "anything")).toBe(true); // missing allow = allow all
+    expect(guardAllows({ deny: ["x"] }, "anything")).toBe(true); // deny-only still allows the rest
+  });
 });

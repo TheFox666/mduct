@@ -80,7 +80,12 @@ export class ServerConnection {
       try {
         return (await client.callTool({ name: tool, arguments: args })) as CallResult;
       } catch (e) {
-        this.drop(); // a failed call may mean a dead transport — force reconnect next time
+        // close BEFORE drop: drop() only nulls refs, it never kills the child. The common case is a
+        // LIVE transport that returned an error (bad args, server-side throw) — dropping without
+        // closing orphans the child, and the next call spawns a fresh one (child leak). Calls are
+        // queue-serialized so `client` is this.client; closing it is safe.
+        void client.close().catch(() => {});
+        this.drop();
         throw e;
       }
     });

@@ -23,6 +23,13 @@ describe("ServerConnection hardening", () => {
     await c.close();
   }, 10_000);
 
+  // NOTE on #1 (child-leak fix in call()'s catch): the common "error" cases (bad args, unknown tool)
+  // come back as isError CONTENT and callTool RESOLVES — they never hit the catch. callTool only
+  // rejects on transport death (child already gone) or the SDK's ~60s request timeout (a live but
+  // very slow child). Only that last case leaks, and it can't be triggered fast/deterministically,
+  // so there's no cheap regression test — the fix (close before drop) is verified by construction and
+  // mirrors the four other paths that already close(). The #5 test below exercises the catch path.
+
   test("reconnects after the server process dies (#5)", async () => {
     const c = new ServerConnection("fix", fixtureCfg);
     await c.call("echo", { text: "alive" });
