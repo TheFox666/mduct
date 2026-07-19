@@ -6,7 +6,7 @@ import { serveIpc, socketAlive, socketPath } from "../shared/ipc";
 
 const LOG_CAP = 500;
 
-export async function startDaemon(): Promise<{ stop(): Promise<void> }> {
+export async function startDaemon(opts: { standalone?: boolean } = {}): Promise<{ stop(): Promise<void> }> {
   // Refuse to start over a live daemon — otherwise a racing autostart would bind a
   // second listener and orphan the first (with its MCP children) (#15).
   if (await socketAlive(socketPath())) throw new Error(`daemon already running on ${socketPath()}`);
@@ -102,9 +102,13 @@ export async function startDaemon(): Promise<{ stop(): Promise<void> }> {
     watcher?.close();
     srv.stop();
     await Promise.all([...conns.values()].map((c) => c.close()));
+    // ponytail: as the standalone daemon process, force exit after the graceful close — a lingering
+    // child-MCP pipe handle must never keep it alive past shutdown (was the test-daemon leak; also
+    // any prod bounce). NOT when embedded in-process (tests) — that would kill the caller.
+    if (opts.standalone) process.exit(0);
   };
   log("daemon up");
   return { stop: stopFn };
 }
 
-if (import.meta.main) void startDaemon();
+if (import.meta.main) void startDaemon({ standalone: true });

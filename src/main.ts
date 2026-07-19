@@ -55,6 +55,16 @@ INSTANCES
   config, secrets, auth and daemon socket (mirrors ~/.claude vs ~/.claude-agent-office).
   No profile → the default ~/.config/mcpmux/. \`mux status\` shows which instance answered.
 
+PIPING (keep big outputs OUT of your context — lossless)
+  \`mux call\` prints the tool's JSON to stdout, so pipe it through jq: only the
+  filtered result becomes the tool output in your context, the full blob never does.
+    # 20 issues as 4 fields each, not full bodies (measured: ~13.7k → ~1.1k chars):
+    mux call linear-server list_issues limit=20 | jq -c '.issues|map({id,title,status,priority:.priority.name})'
+    # don't know the shape? peek once, then project the fields you need:
+    mux call <server> <tool> | jq 'if type=="array" then .[0] else . end | keys'
+    # combine calls — list, then fetch each (project the second call too):
+    mux call <server> list_x | jq -r '.[].id' | while read i; do mux call <server> get_x id=$i | jq -c '{id,title}'; done
+
 EXAMPLES
   mux call gitlab list_issues state=opened labels:='["bug"]'
   mux call hive search_code query="parseArgs" --timeout 30
@@ -123,7 +133,7 @@ async function main(): Promise<number> {
       if (boolFlag(argv, "--stop")) { await request(socketPath(), "shutdown", {}, 3000).catch(() => {}); return 0; }
       if (boolFlag(argv, "--install")) { const { installSystemd } = await import("./cli/systemd"); return await installSystemd(); }
       const { startDaemon } = await import("./daemon/daemon");
-      await startDaemon();
+      await startDaemon({ standalone: true }); // this process IS the daemon → force-exit on shutdown
       await new Promise(() => {}); // run forever
       return 0;
     }
