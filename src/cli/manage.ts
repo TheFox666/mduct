@@ -13,8 +13,13 @@ export async function cmdSearch(query: string | undefined): Promise<number> {
 /** Registry install: `mux add <ref-with-slash> [--as name] [--replace]`. */
 async function addFromRegistry(ref: string, as: string | undefined, replace: boolean): Promise<number> {
   const hits = await searchRegistry(ref);
-  const hit = hits.find((h) => h.ref === ref) ?? hits[0];
-  if (!hit) { console.error(`"${ref}" not found in registry — try: mux search <query>`); return 1; }
+  // exact ref only — silently installing "the closest hit" would be a supply-chain foot-gun
+  const hit = hits.find((h) => h.ref === ref);
+  if (!hit) {
+    const near = hits.slice(0, 5).map((h) => h.ref).join(", ");
+    console.error(`"${ref}" not found in registry${near ? ` — did you mean: ${near}` : ""} — try: mux search <query>`);
+    return 1;
+  }
   const { cfg, requiredEnv } = toServerCfg(hit);
   const name = as ?? ref.split("/").pop()!.replace(/[^a-z0-9-]/gi, "-");
   addServer(name, cfg, { replace });

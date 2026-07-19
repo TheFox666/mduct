@@ -23,6 +23,7 @@ function baseUrl(): string {
 }
 
 export async function searchRegistry(query: string): Promise<RegistryHit[]> {
+  if (process.env.MCPMUX_DEBUG) console.error("[registry] GET", `${baseUrl()}/v0/servers?search=${encodeURIComponent(query)}&limit=30`);
   const res = await fetch(`${baseUrl()}/v0/servers?search=${encodeURIComponent(query)}&limit=30`, {
     signal: AbortSignal.timeout(15_000),
   });
