@@ -9,7 +9,11 @@ build: ## Self-contained Binary nach dist/mux
 
 install: build ## Binary nach ~/.local/bin (stoppt laufenden Daemon fürs Ersetzen)
 	-$(BIN_DIR)/mux daemon --stop 2>/dev/null
-	cp dist/mux $(BIN_DIR)/mux
+	@for i in 1 2 3 4 5 6; do \
+		cp dist/mux $(BIN_DIR)/mux 2>/dev/null && break; \
+		sleep 0.5; \
+		[ $$i = 6 ] && { echo "binary busy — Daemon läuft noch? mux status"; exit 1; }; \
+	done
 	@echo "installed: $(BIN_DIR)/mux"
 
 clean: ## Build-Artefakte entfernen
