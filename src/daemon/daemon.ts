@@ -13,11 +13,15 @@ export async function startDaemon(): Promise<{ stop(): Promise<void> }> {
   let config: Config = loadConfig();
   const conns = new Map<string, ServerConnection>();
   const lastUsed = new Map<string, number>();
-  const logs: string[] = [];
-  const log = (line: string) => {
-    logs.push(`${new Date().toISOString()} ${line}`);
+  // structured ring buffer: each entry tags its server (or null) so `mux logs <server>`
+  // filters exactly instead of substring-matching ("lab" matched "gitlab.") (#19/N6)
+  const logs: { ts: string; server: string | null; line: string }[] = [];
+  const log = (line: string, server: string | null = null) => {
+    logs.push({ ts: new Date().toISOString(), server, line });
     if (logs.length > LOG_CAP) logs.shift();
   };
+  const renderLogs = (server?: string): string[] =>
+    logs.filter((e) => !server || e.server === server).map((e) => `${e.ts} ${e.line}`);
 
   const conn = (name: string): ServerConnection => {
     const cfg = config.servers[name];
@@ -58,7 +62,7 @@ export async function startDaemon(): Promise<{ stop(): Promise<void> }> {
       const ttlMin = config.servers[n]?.idleTtlMin ?? 30;
       // never close a connection with queued/running calls, even past the TTL (#23)
       if (!c.busy && c.connectedSince && Date.now() - (lastUsed.get(n) ?? 0) > ttlMin * 60_000) {
-        log(`idle-closing ${n}`);
+        log(`idle-closing ${n}`, n);
         void c.close();
       }
     }
@@ -69,9 +73,9 @@ export async function startDaemon(): Promise<{ stop(): Promise<void> }> {
     switch (method) {
       case "ping": return "pong";
       case "call": {
-        log(`call ${p.server}.${p.tool}`);
+        log(`call ${p.server}.${p.tool}`, p.server);
         try { return await conn(p.server).call(p.tool, p.args ?? {}, p.timeoutMs); }
-        catch (e) { log(`call ${p.server}.${p.tool} FAILED: ${(e as Error).message}`); throw e; }
+        catch (e) { log(`call ${p.server}.${p.tool} FAILED: ${(e as Error).message}`, p.server); throw e; }
       }
       case "tools": return await conn(p.server).listTools();
       case "schema": {
@@ -87,8 +91,7 @@ export async function startDaemon(): Promise<{ stop(): Promise<void> }> {
           disabled: !!cfg.disabled,
           note: cfg.note,
         }));
-      case "logs":
-        return p?.server ? logs.filter((l) => l.includes(`${p.server}.`) || l.includes(` ${p.server} `)) : logs;
+      case "logs": return renderLogs(p?.server);
       case "shutdown": setTimeout(() => void stopFn(), 20); return "bye";
       default: throw new Error(`unknown method ${method}`);
     }
