@@ -79,11 +79,83 @@ Per-server allow/deny patterns, enforced in the daemon — not in the prompt:
 | `MCPMUX_CONFIG` | config path (default `~/.config/mcpmux/servers.jsonc`) |
 | `MCPMUX_SOCKET` | daemon socket (default `$XDG_RUNTIME_DIR/mcpmux.sock`) |
 
-## Roadmap
+## CLI tools (not just MCP)
 
-See `docs/specs/2026-07-19-mcpmux-design.md`: registry marketplace with
-interactive picker (`mux add`), import from Claude configs (`--from-claude`,
-multiple config dirs), native OAuth (`mux auth`), `mux doctor`, Claude hooks
-(SessionStart index injection, PreToolUse redirect), npm/Homebrew distribution.
+A `tools` section sits beside `servers`, so plain CLIs (playwright, kubectl,
+aws) become discoverable and invokable through the *same* entry point — an
+agent sees one capability list, no MCP-vs-CLI distinction:
+
+```jsonc
+"tools": {
+  "playwright": {
+    "run": "npx", "args": ["playwright"],
+    "env": { "NODE_PATH": "${PLAYWRIGHT_NODE_PATH}" },   // special setup, applied centrally
+    "check": "node -e \"require('playwright')\"",
+    "setup": "npm i -g playwright && playwright install chromium",
+    "note": "headless browser for UI smoke"
+  }
+}
+```
+
+```sh
+mux run playwright test.js     # exec with the tool's env/wrapping, stdio + exit code passthrough
+mux tool status                # installed / missing per tool
+mux tool setup playwright      # run its installer
+mux add kubectl --tool --check "kubectl version --client" -- kubectl
+```
+
+`mux run` applies the stored env/wrapping, so a tool with a special setup works
+identically everywhere — no per-environment lock-in.
+
+## Secrets
+
+`${VAR}` in a config resolves against `process.env` first, then a 0600 secret
+store — so the normal case needs no shell exports:
+
+```sh
+echo "$TOKEN" | mux secret set GITLAB_PAT     # or a hidden TTY prompt
+mux secret list                               # names only, never values
+```
+
+`mux add --env` and `mux import` move literal secret values into the store
+automatically and leave a `${ref}` in the config — plaintext tokens never land
+in `servers.jsonc`.
+
+## OAuth servers
+
+```sh
+mux auth linear     # one-time browser consent; tokens stored 0600, daemon auto-refreshes
+```
+
+Set `"auth": "oauth"` on an http server; the daemon then uses and refreshes the
+stored token automatically. A dead session fails with `run: mux auth <server>`.
+
+## Claude hooks
+
+```sh
+mux hook install claude     # SessionStart injects `mux index`; PreToolUse redirects mcp__* calls
+```
+
+## Import & registry
+
+```sh
+mux import                  # list MCP servers across all Claude configs (~/.claude*, .mcp.json)
+mux import linear           # copy one into mux (secrets externalized)
+mux search gitlab           # the public MCP registry
+mux add com.gitlab/mcp --as gitlab   # install by registry ref (version-pinned)
+mux doctor                  # overlap report: servers attached directly AND served by mux
+```
+
+## Install
+
+```sh
+mux daemon --install        # optional systemd user unit (warm daemon, Restart=on-failure)
+```
+
+## Deliberately not built (v1)
+
+Interactive `mux add` picker — the non-interactive `mux search` + `mux add
+<ref>` covers both humans and agents, so a raw-mode TUI wasn't worth the
+surface. npm/Homebrew distribution channels are release chores.
 
 MIT.
