@@ -10,6 +10,17 @@ export function socketPath(): string {
 
 export type Handler = (method: string, params: any) => Promise<unknown>;
 
+/** Tag connect-level failures so callers can tell "daemon down" from an application error. */
+function markTransport(e: unknown): Error {
+  const err = e instanceof Error ? e : new Error(String(e));
+  (err as Error & { transport?: boolean }).transport = true;
+  return err;
+}
+
+export function isTransportError(e: unknown): boolean {
+  return !!(e as { transport?: boolean } | null)?.transport;
+}
+
 export function serveIpc(path: string, handler: Handler): { stop(): void } {
   mkdirSync(dirname(path), { recursive: true });
   const server = Bun.listen<{ buf: string }>({
@@ -57,8 +68,8 @@ export async function request(path: string, method: string, params: unknown, tim
           msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result);
           s.end();
         },
-        error(_s, e) { clearTimeout(timer); reject(e); },
+        error(_s, e) { clearTimeout(timer); reject(markTransport(e)); },
       },
-    }).catch((e) => { clearTimeout(timer); reject(e); });
+    }).catch((e) => { clearTimeout(timer); reject(markTransport(e)); });
   });
 }

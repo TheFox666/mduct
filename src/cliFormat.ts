@@ -1,0 +1,37 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+/** Print a CallResult per the output contract. Returns process exit code. */
+export function printResult(res: { content: unknown[]; isError?: boolean }, raw: boolean): number {
+  if (raw) { console.log(JSON.stringify(res, null, 2)); return res.isError ? 1 : 0; }
+  const lines: string[] = [];
+  for (const [i, c0] of (res.content ?? []).entries()) {
+    const c = c0 as any;
+    if (c.type === "text") lines.push(c.text);
+    else if (c.data && c.mimeType) {
+      const ext = String(c.mimeType).split("/")[1]?.split("+")[0] ?? "bin";
+      const dir = join(tmpdir(), "mcpmux");
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, `${Date.now()}-${i}.${ext}`);
+      writeFileSync(file, Buffer.from(c.data, "base64"));
+      lines.push(file);
+    } else lines.push(JSON.stringify(c));
+  }
+  const text = lines.join("\n");
+  if (res.isError) { console.error(text); return 1; }
+  console.log(text);
+  return 0;
+}
+
+/** k=v pairs + optional --args JSON → tool arguments. JSON wins on key conflict. */
+export function parseArgs(pairs: string[], argsJson?: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const p of pairs) {
+    const eq = p.indexOf("=");
+    if (eq < 1) throw new Error(`bad argument "${p}" — use key=value or --args '<json>'`);
+    const v = p.slice(eq + 1);
+    out[p.slice(0, eq)] = v === "true" ? true : v === "false" ? false : v !== "" && !isNaN(Number(v)) ? Number(v) : v;
+  }
+  return argsJson ? { ...out, ...JSON.parse(argsJson) } : out;
+}

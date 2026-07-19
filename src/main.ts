@@ -1,0 +1,107 @@
+import { existsSync, rmSync } from "node:fs";
+import { configPath, loadConfig } from "./config";
+import { isTransportError, request, socketPath } from "./ipc";
+import { parseArgs, printResult } from "./cliFormat";
+
+const HELP = `mcpmux — MCP multiplexer. Commands:
+  mux call <server> <tool> [k=v ...] [--args '<json>'] [--timeout <s>] [--raw]
+  mux tools <server>          mux schema <server> <tool>
+  mux servers                 mux index
+  mux logs [server]           mux status
+  mux daemon [--stop]         mux help
+Config: ${configPath()}`;
+
+function flag(argv: string[], name: string): string | undefined {
+  const i = argv.indexOf(name);
+  if (i < 0) return undefined;
+  const v = argv[i + 1];
+  argv.splice(i, 2);
+  return v;
+}
+function boolFlag(argv: string[], name: string): boolean {
+  const i = argv.indexOf(name);
+  if (i < 0) return false;
+  argv.splice(i, 1);
+  return true;
+}
+
+/** Entry command that works under `bun src/main.ts` AND inside a compiled binary. */
+function selfCmd(extra: string[]): string[] {
+  const entry = process.argv[1] ?? "";
+  return entry.startsWith("/$bunfs") || entry === "" ? [process.execPath, ...extra] : [process.execPath, entry, ...extra];
+}
+
+async function daemonRequest(method: string, params: unknown): Promise<unknown> {
+  const sock = socketPath();
+  try { return await request(sock, method, params); }
+  catch (e) {
+    if (!isTransportError(e)) throw e; // application error — daemon is fine, don't respawn
+    if (existsSync(sock)) rmSync(sock, { force: true }); // stale socket from a dead daemon
+    Bun.spawn(selfCmd(["daemon"]), { stdout: "ignore", stderr: "ignore", stdin: "ignore" }).unref();
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      try { return await request(sock, method, params); } catch { /* not up yet */ }
+    }
+    throw new Error(`daemon did not come up on ${sock} — try: mux daemon (foreground) to see why`);
+  }
+}
+
+async function main(): Promise<number> {
+  const argv = process.argv.slice(2);
+  const cmd = argv.shift() ?? "help";
+  switch (cmd) {
+    case "daemon": {
+      if (boolFlag(argv, "--stop")) { await request(socketPath(), "shutdown", {}, 3000).catch(() => {}); return 0; }
+      const { startDaemon } = await import("./daemon");
+      await startDaemon();
+      await new Promise(() => {}); // run forever
+      return 0;
+    }
+    case "call": {
+      const raw = boolFlag(argv, "--raw");
+      const timeout = flag(argv, "--timeout");
+      const argsJson = flag(argv, "--args");
+      const [server, tool, ...pairs] = argv;
+      if (!server || !tool) { console.error("usage: mux call <server> <tool> [k=v ...] — see: mux servers"); return 1; }
+      const res = await daemonRequest("call", {
+        server, tool, args: parseArgs(pairs, argsJson),
+        timeoutMs: timeout ? Number(timeout) * 1000 : undefined,
+      });
+      return printResult(res as any, raw);
+    }
+    case "tools": {
+      const tools = (await daemonRequest("tools", { server: argv[0] })) as { name: string; description?: string }[];
+      for (const t of tools) console.log(`${t.name.padEnd(28)} — ${(t.description ?? "").split("\n")[0]}`);
+      return 0;
+    }
+    case "schema":
+      console.log(JSON.stringify(await daemonRequest("schema", { server: argv[0], tool: argv[1] }), null, 2));
+      return 0;
+    case "servers": {
+      const list = (await daemonRequest("servers", {})) as { name: string; connected: boolean; disabled: boolean; note?: string }[];
+      for (const s of list)
+        console.log(`${s.name.padEnd(16)} ${s.disabled ? "disabled" : s.connected ? "connected" : "idle"}${s.note ? `  — ${s.note}` : ""}`);
+      return 0;
+    }
+    case "index": {
+      const cfg = loadConfig(); // no daemon needed: index must work in hooks even when cold
+      const names = Object.entries(cfg.servers).filter(([, s]) => !s.disabled);
+      if (names.length === 0) return 0;
+      console.log("MCP tools available via `mux` CLI (details: mux tools <server>; call: mux call <server> <tool> key=value):");
+      for (const [name, s] of names) console.log(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
+      return 0;
+    }
+    case "logs": console.log(((await daemonRequest("logs", { server: argv[0] })) as string[]).join("\n")); return 0;
+    case "status": {
+      try { await request(socketPath(), "ping", {}, 1500); console.log(`daemon: up (${socketPath()})`); }
+      catch { console.log(`daemon: down (${socketPath()})`); }
+      return 0;
+    }
+    default: console.log(HELP); return cmd === "help" ? 0 : 1;
+  }
+}
+
+main().then(
+  (code) => process.exit(code),
+  (e) => { console.error(String((e as Error).message ?? e)); process.exit(1); },
+);
