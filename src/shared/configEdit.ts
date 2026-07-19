@@ -34,6 +34,20 @@ export function addServer(name: string, server: ServerCfg, opts: { replace?: boo
   save(cfg);
 }
 
+/** Re-pin an npm-backed tool: replace `pkg@oldVer` with `pkg@newVer` across run/args/check/setup. */
+export function updateToolPin(name: string, pkg: string, oldVer: string, newVer: string): void {
+  const cfg = rawConfig();
+  const t = cfg.tools[name];
+  if (!t) throw new Error(`unknown tool "${name}"`);
+  const swap = (s: string) => s.split(`${pkg}@${oldVer}`).join(`${pkg}@${newVer}`);
+  t.run = swap(t.run);
+  if (t.args) t.args = t.args.map(swap);
+  if (t.check) t.check = swap(t.check);
+  if (t.setup) t.setup = swap(t.setup);
+  cfg.tools[name] = t;
+  save(cfg);
+}
+
 export function addTool(name: string, tool: ToolCfg, opts: { replace?: boolean } = {}): void {
   const cfg = rawConfig();
   if (cfg.tools[name] && !opts.replace)

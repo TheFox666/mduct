@@ -1,4 +1,6 @@
 import { loadConfig, type ToolCfg } from "../shared/config";
+import { updateToolPin } from "../shared/configEdit";
+import { isNewer, npmLatest, parseNpmSpec } from "../shared/npm";
 
 function known(): Record<string, ToolCfg> {
   return loadConfig().tools;
@@ -38,8 +40,37 @@ export async function cmdTool(argv: string[]): Promise<number> {
     for (const [name, t] of Object.entries(tools)) {
       if (t.disabled) { console.log(`${name.padEnd(14)} disabled`); continue; }
       const ok = await isInstalled(t);
-      console.log(`${name.padEnd(14)} ${ok ? "✓ installed" : "✗ missing"}${t.setup && !ok ? `  → mux tool setup ${name}` : ""}${t.note ? `  — ${t.note}` : ""}`);
+      // best-effort update hint for pinned npm-backed tools (skips silently when offline)
+      let upd = "";
+      const spec = parseNpmSpec(t);
+      if (spec?.version) {
+        const latest = await npmLatest(spec.pkg);
+        if (latest && isNewer(latest, spec.version)) upd = `  ↑ update ${spec.version} → ${latest} (mux tool update ${name})`;
+      }
+      console.log(`${name.padEnd(14)} ${ok ? "✓ installed" : "✗ missing"}${t.setup && !ok ? `  → mux tool setup ${name}` : ""}${t.note ? `  — ${t.note}` : ""}${upd}`);
     }
+    return 0;
+  }
+  if (sub === "update") {
+    const target = argv[1] ? [argv[1]] : Object.keys(tools);
+    let bumped = 0;
+    for (const name of target) {
+      const t = tools[name];
+      if (!t) { console.error(`unknown tool "${name}"`); return 1; }
+      const spec = parseNpmSpec(t);
+      if (!spec) { if (argv[1]) console.log(`${name}: not an npm-backed tool — nothing to update (OS-managed)`); continue; }
+      const latest = await npmLatest(spec.pkg);
+      if (!latest) { console.log(`${name}: could not reach the npm registry`); continue; }
+      if (!spec.version) { console.log(`${name}: tracks latest (currently ${latest})`); continue; }
+      if (isNewer(latest, spec.version)) {
+        updateToolPin(name, spec.pkg, spec.version, latest);
+        console.log(`${name}: ${spec.version} → ${latest} ✓`);
+        bumped++;
+      } else {
+        console.log(`${name}: up to date (${spec.version})`);
+      }
+    }
+    if (bumped) console.log(`\n${bumped} tool(s) re-pinned — run \`mux tool setup <name>\` if a new browser/binary is needed`);
     return 0;
   }
   if (sub === "setup") {
@@ -53,6 +84,6 @@ export async function cmdTool(argv: string[]): Promise<number> {
     console.log(code === 0 ? `✓ ${name} set up` : `✗ setup failed (exit ${code})`);
     return code === 0 ? 0 : 1;
   }
-  console.error("usage: mux tool status | mux tool setup <name>");
+  console.error("usage: mux tool status | mux tool setup <name> | mux tool update [name]");
   return 1;
 }
