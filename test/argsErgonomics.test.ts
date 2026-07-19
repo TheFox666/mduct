@@ -81,6 +81,20 @@ describe("formatResult oversized-list guard (warnAbove)", () => {
     expect(r.code).toBe(0);
     expect(r.out).toBe(big);
   });
+  test("--json with no JSON payload fails LOUD on stderr, never prints prose to stdout (#4)", () => {
+    const r = fmt([{ type: "text", text: "# Markdown\n- not json at all" }], { json: true });
+    expect(r.code).toBe(2);
+    expect(r.out).toBe(""); // must not silently feed prose into a downstream `| jq`
+    expect(r.err).toContain("no JSON payload");
+  });
+  test("guard quotes non-identifier field names so the pasted jq parses (#7)", () => {
+    // no id-like keys → falls back to short scalars incl. hyphen/dot keys, which jq shorthand rejects
+    const items = Array.from({ length: 40 }, (_, i) => ({ "web-url": `https://x/${i}`, "a-b": "v", description: "d".repeat(200) }));
+    const r = fmt([{ type: "text", text: JSON.stringify(items) }], { warnAbove: 200, server: "s", tool: "t" });
+    expect(r.code).toBe(2);
+    expect(r.err).toContain('"web-url":.["web-url"]'); // explicit form, not bare `{web-url}`
+    expect(r.err).toContain('"a-b":.["a-b"]');
+  });
 });
 
 describe("toolSignature", () => {

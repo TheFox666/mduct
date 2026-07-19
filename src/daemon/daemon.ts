@@ -69,7 +69,7 @@ export async function startDaemon(opts: { standalone?: boolean } = {}): Promise<
   }, 60_000);
 
   let stopFn: () => Promise<void>;
-  const srv = serveIpc(socketPath(), async (method, p) => {
+  const srv = await serveIpc(socketPath(), async (method, p) => {
     switch (method) {
       case "ping": return "pong";
       case "call": {

@@ -40,12 +40,14 @@ export async function socketAlive(path: string): Promise<boolean> {
   catch { return false; }
 }
 
-export function serveIpc(path: string, handler: Handler): { stop(): void } {
+export async function serveIpc(path: string, handler: Handler): Promise<{ stop(): void }> {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  // A crashed daemon leaves a stale socket file → Bun.listen would EADDRINUSE. The caller
-  // (startDaemon) probes socketAlive() first and refuses to start over a live one, so an
-  // existing file here is stale and safe to remove (#22, foreground-debug path).
-  if (existsSync(path)) rmSync(path, { force: true });
+  // Only remove a DEAD socket. A crashed daemon leaves a stale file (safe to clear), but under a
+  // cold-start RACE two daemons both pass startDaemon's socketAlive guard; if the loser then
+  // unconditionally rmSync'd the winner's LIVE socket and rebound, the winner would be orphaned
+  // (listening on an unlinked path, holding its MCP children forever). So probe again here: if a
+  // live socket remains, leave it — Bun.listen then throws EADDRINUSE and this daemon exits clean.
+  if (existsSync(path) && !(await socketAlive(path))) rmSync(path, { force: true });
   const server = Bun.listen<{ buf: string; dec: TextDecoder; drains: (() => void)[] }>({
     unix: path,
     socket: {
@@ -65,7 +67,15 @@ export function serveIpc(path: string, handler: Handler): { stop(): void } {
             continue; // one bad line never crashes the daemon (#9)
           }
           handler(msg.method, msg.params).then(
-            (result) => write(JSON.stringify({ id: msg.id, result }) + "\n"),
+            (result) => {
+              // JSON.stringify can THROW (a pathologically deep/circular result from a hostile or
+              // buggy MCP server) — if it did here the response frame would never be written and the
+              // caller would hang the full timeout. Serialize inside the try, fall back to an error.
+              let frame: string;
+              try { frame = JSON.stringify({ id: msg.id, result }) + "\n"; }
+              catch (e) { frame = JSON.stringify({ id: msg.id, error: { message: `result not serializable: ${String((e as Error).message ?? e)}` } }) + "\n"; }
+              write(frame);
+            },
             (e) => write(JSON.stringify({ id: msg.id, error: { message: String((e as Error).message ?? e) } }) + "\n"),
           );
         }

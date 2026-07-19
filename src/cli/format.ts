@@ -1,17 +1,24 @@
-import { mkdirSync, mkdtempSync, writeFileSync, writeSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-/** Write to stdout SYNCHRONOUSLY and COMPLETELY (fd 1). Two traps this avoids: (1) console.log is
- *  async on a pipe, so process.exit() drops the un-drained tail of a big payload; (2) a single
- *  writeSync only pushes one pipe buffer (~64KB) and returns a SHORT count — the rest is silently
- *  lost. So loop until every byte is written, retrying EAGAIN when the pipe is momentarily full. */
+/** Write to stdout SYNCHRONOUSLY and COMPLETELY (fd 1). Traps this avoids: (1) console.log is async
+ *  on a pipe, so process.exit() drops the un-drained tail of a big payload; (2) a single writeSync
+ *  only pushes one pipe buffer (~64KB) and returns a SHORT count — loop until every byte is out;
+ *  (3) fd 1 is non-blocking, so a full pipe throws EAGAIN — sleep 1ms and retry, never a hot spin
+ *  (a stalled-but-open reader would otherwise pin a core); (4) a closed reader (`| head`) throws
+ *  EPIPE — stop cleanly like every other Unix tool instead of erroring. */
 function emit(s: string): void {
   const buf = Buffer.from(`${s}\n`);
   let off = 0;
   while (off < buf.length) {
     try { off += writeSync(1, buf, off, buf.length - off); }
-    catch (e) { if ((e as NodeJS.ErrnoException).code === "EAGAIN") continue; throw e; } // pipe full → retry
+    catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === "EAGAIN") { Bun.sleepSync(1); continue; } // pipe full → yield, don't burn a core
+      if (code === "EPIPE") return; // reader closed the pipe (e.g. `| head`) → done, cleanly
+      throw e;
+    }
   }
 }
 
@@ -20,6 +27,16 @@ function mediaDir(): string {
   const base = process.env.XDG_RUNTIME_DIR ?? join(homedir(), ".cache", "mcpmux");
   const root = join(base, "media");
   mkdirSync(root, { recursive: true, mode: 0o700 });
+  // reap prior invocations' media dirs (>1h old). Each mux call mkdtemps a fresh dir and emits the
+  // file PATH — the agent reads it AFTER this process exits, so we can't clean at exit; sweep old
+  // ones here instead, or the ~/.cache fallback (not tmpfs-cleared) grows without bound (#3).
+  try {
+    const cutoff = Date.now() - 3_600_000;
+    for (const name of readdirSync(root)) {
+      const p = join(root, name);
+      try { if (statSync(p).mtimeMs < cutoff) rmSync(p, { recursive: true, force: true }); } catch { /* racing sweep / in-use */ }
+    }
+  } catch { /* first run: root just created, nothing to reap */ }
   return mkdtempSync(join(root, "r-"));
 }
 
@@ -93,7 +110,10 @@ function projectionRecipe(data: unknown): Recipe | null {
  *  the real field names, what got dropped, and the escape hatches (narrow / --full). Uses --json
  *  (clean JSON payload) so the pipe works even when the server prefixes prose (GitLab). */
 function oversizeWarning(chars: number, server: string, tool: string, r: Recipe): string {
-  const proj = `${r.path === "." ? "" : `${r.path}|`}map({${r.keep.join(",")}})`;
+  // jq object shorthand `{id}` only works for bare-identifier keys; a hyphen/dot/unicode key
+  // (e.g. web-url) needs the explicit `"k": .["k"]` form or the pasted command is a jq syntax error.
+  const fields = r.keep.map((k) => (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) ? k : `${JSON.stringify(k)}:.[${JSON.stringify(k)}]`)).join(",");
+  const proj = `${r.path === "." ? "" : `${r.path}|`}map({${fields}})`;
   const dropNote = r.drop.length ? `   dropped (long/nested): ${r.drop.slice(0, 8).join(" ")}` : "";
   return [
     `⚠ ${r.count} items, ~${Math.round(chars / 1024)} KB — too big for context. Slim it, don't dump it:`,
@@ -120,7 +140,9 @@ export function formatResult(res: { content: unknown[]; isError?: boolean }, opt
   if (opts.json && !res.isError) {
     const payload = jsonPayload(res);
     if (payload !== undefined) return { out: JSON.stringify(payload), code: 0 };
-    // no JSON in the result → fall through to normal text output (nothing to pipe)
+    // no JSON in the result (e.g. a markdown-only server) → fail LOUD on stderr instead of quietly
+    // printing prose to stdout, which would feed a `| jq` garbage while mux exits 0 (#4).
+    return { err: "--json: this result has no JSON payload (server returned text/markdown) — re-run without --json", code: 2 };
   }
   const lines: string[] = [];
   let dir: string | null = null;
