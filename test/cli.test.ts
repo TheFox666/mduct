@@ -38,9 +38,10 @@ test("tool error → stderr + exit 1", async () => {
   expect(r.err).toContain("kaboom");
 });
 
-test("tools prints compact lines", async () => {
+test("tools prints compact lines with arg signatures", async () => {
   const r = await mux("tools", "fix");
-  expect(r.out).toMatch(/echo\s+— echoes text back/);
+  expect(r.out).toMatch(/echo\(text\)\s+— echoes text back/); // signature up front
+  expect(r.out).toMatch(/sleep\(ms\)/);
 });
 
 test("index prints one line per server with note", async () => {

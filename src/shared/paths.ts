@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 /**
  * Instance path resolution. A named instance is selected with MCPMUX_PROFILE and lives under
@@ -29,7 +29,8 @@ export function secretsPath(): string {
 }
 
 export function authDir(): string {
-  return join(configDir(), "auth");
+  // always next to the active config, so an explicit MCPMUX_CONFIG override keeps auth alongside it
+  return join(dirname(configPath()), "auth");
 }
 
 export function socketPath(): string {

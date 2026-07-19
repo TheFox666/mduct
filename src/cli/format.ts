@@ -55,7 +55,7 @@ export function renderIndex(cfg: { servers: Record<string, { note?: string; disa
   const servers = Object.entries(cfg.servers).filter(([, s]) => !s.disabled);
   const tools = Object.entries(cfg.tools).filter(([, t]) => !t.disabled);
   if (servers.length) {
-    out.push("MCP tools via `mux` CLI (list: mux tools <server>; call: mux call <server> <tool> key=value):");
+    out.push("MCP tools via `mux` CLI (list+args: mux tools <server>; call: mux call <server> <tool> key=value key:=<json>):");
     for (const [name, s] of servers) out.push(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
   }
   if (tools.length) {
@@ -65,14 +65,35 @@ export function renderIndex(cfg: { servers: Record<string, { note?: string; disa
   return out;
 }
 
-/** k=v pairs + optional --args JSON → tool arguments. JSON wins on key conflict. */
+/** Compact call signature from a tool's inputSchema: `(required, optional?)`. Empty when none. */
+export function toolSignature(inputSchema: unknown): string {
+  const s = inputSchema as { properties?: Record<string, unknown>; required?: string[] } | undefined;
+  const props = s?.properties ? Object.keys(s.properties) : [];
+  if (props.length === 0) return "";
+  const req = new Set(s?.required ?? []);
+  return `(${props.map((k) => (req.has(k) ? k : `${k}?`)).join(", ")})`;
+}
+
+/**
+ * key=value pairs → tool arguments. Two forms, httpie-style:
+ *   key=value    scalar (coerced: plain int/float/bool; everything else, incl. big ids, stays string)
+ *   key:=json    the value is parsed as JSON (arrays/objects/typed) — mix nested args without --args
+ * `--args '<json>'` still merges a whole object on top (wins on key conflict).
+ */
 export function parseArgs(pairs: string[], argsJson?: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const p of pairs) {
     const eq = p.indexOf("=");
-    if (eq < 1) throw new Error(`bad argument "${p}" — use key=value or --args '<json>'`);
+    if (eq < 1) throw new Error(`bad argument "${p}" — use key=value, key:=<json>, or --args '<json>'`);
+    const rawKey = p.slice(0, eq);
     const v = p.slice(eq + 1);
-    out[p.slice(0, eq)] = coerce(v);
+    if (rawKey.endsWith(":")) {
+      // key:=json — value is a JSON literal
+      try { out[rawKey.slice(0, -1)] = JSON.parse(v); }
+      catch { throw new Error(`bad argument "${p}" — the value after ':=' must be valid JSON (e.g. labels:='["a","b"]')`); }
+    } else {
+      out[rawKey] = coerce(v);
+    }
   }
   return argsJson ? { ...out, ...JSON.parse(argsJson) } : out;
 }

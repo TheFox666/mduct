@@ -11,8 +11,9 @@ USAGE
   mux <command> [args]
 
 CALL & RUN
-  call <server> <tool> [key=value …]   invoke an MCP tool. key=value for flat args;
-       [--args '<json>'] [--timeout <s>] [--raw]   --args for nested, --raw for the full envelope
+  call <server> <tool> [key=value …]   invoke an MCP tool. key=value = scalar (coerced);
+       [key:=<json> …]                        key:=<json> = a JSON value (arrays/objects/typed);
+       [--args '<json>'] [--timeout <s>] [--raw]   --args merges a whole object; --raw = full envelope
   run <tool> [args …]                  run a CLI tool (kubectl/aws/…) with its stored env/wrapping
   tools <server>                       list a server's tools (compact — no schemas)
   schema <server> <tool>               full JSON schema of one tool
@@ -53,7 +54,7 @@ INSTANCES
   No profile → the default ~/.config/mcpmux/. \`mux status\` shows which instance answered.
 
 EXAMPLES
-  mux call gitlab list_issues state=opened
+  mux call gitlab list_issues state=opened labels:='["bug"]'
   mux call hive search_code query="parseArgs" --timeout 30
   mux run kubectl get pods -n zep
   echo "\$TOKEN" | mux secret set GITLAB_PAT
@@ -128,8 +129,10 @@ async function main(): Promise<number> {
       return printResult(res as any, raw);
     }
     case "tools": {
-      const tools = (await daemonRequest("tools", { server: argv[0] })) as { name: string; description?: string }[];
-      for (const t of tools) console.log(`${t.name.padEnd(28)} — ${(t.description ?? "").split("\n")[0]}`);
+      const { toolSignature } = await import("./cli/format");
+      const tools = (await daemonRequest("tools", { server: argv[0] })) as { name: string; description?: string; inputSchema?: unknown }[];
+      // name + arg signature up front so you see calls AND args without a separate `mux schema`
+      for (const t of tools) console.log(`${(t.name + toolSignature(t.inputSchema)).padEnd(34)} — ${(t.description ?? "").split("\n")[0]}`);
       return 0;
     }
     case "schema":
