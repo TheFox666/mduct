@@ -158,7 +158,7 @@ async function main(): Promise<number> {
       let up = false;
       try { up = (await request(sock, "ping", {}, 1500)) === "pong"; } catch { /* down */ }
       // print the full instance identity so it's obvious WHICH mux (personal vs office etc.)
-      console.log(`daemon:  ${up ? "up" : "down"}`);
+      console.log(`daemon:  ${up ? "up" : "down (lazy — autostarts on the next call)"}`);
       console.log(`socket:  ${sock}`);
       console.log(`config:  ${configPath()}`);
       console.log(`secrets: ${secretsPath()}`);
