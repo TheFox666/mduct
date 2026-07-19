@@ -9,21 +9,31 @@ function rawConfig(): Config {
   const p = configPath();
   if (!existsSync(p)) return { servers: {}, tools: {} };
   const raw = JSON.parse(stripJsonc(readFileSync(p, "utf8"))) as Config;
-  return { servers: raw.servers ?? {}, tools: raw.tools ?? {} }; // preserve tools across server edits
+  return { servers: raw.servers ?? {}, tools: raw.tools ?? {}, ...(raw.defaults ? { defaults: raw.defaults } : {}) }; // preserve tools + defaults across edits
 }
 
 function save(cfg: Config): void {
   const p = configPath();
   mkdirSync(dirname(p), { recursive: true, mode: 0o700 });
-  // omit an empty tools section so a server-only config stays clean
+  // omit empty sections so a server-only config stays clean
   const out: Partial<Config> = { servers: cfg.servers };
   if (Object.keys(cfg.tools ?? {}).length) out.tools = cfg.tools;
+  if (cfg.defaults && Object.keys(cfg.defaults).length) out.defaults = cfg.defaults;
   const body = JSON.stringify(out, null, 2);
   // atomic write: a crash mid-write must not corrupt the config (and the daemon watcher
   // must never read a half-written file) (#18)
   const tmp = `${p}.${process.pid}.tmp`;
   writeFileSync(tmp, `// managed by mcpmux — edits survive, comments don't (rewritten on mux add/remove)\n${body}\n`);
   renameSync(tmp, p);
+}
+
+/** Set (or clear, with undefined) a per-instance default like `compact`. */
+export function setDefault(key: "compact", value: boolean | undefined): void {
+  const cfg = rawConfig();
+  cfg.defaults ??= {};
+  if (value === undefined) delete cfg.defaults[key];
+  else cfg.defaults[key] = value;
+  save(cfg);
 }
 
 export function addServer(name: string, server: ServerCfg, opts: { replace?: boolean } = {}): void {

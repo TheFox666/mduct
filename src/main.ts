@@ -47,6 +47,7 @@ DAEMON & SETUP
   daemon [--stop | --install]          run in foreground / stop / install a systemd user unit
   hook install claude [--remove]       inject \`mux index\` at session start + redirect mcp__* calls
   doctor                               report MCP servers attached directly that mux already serves
+  config [compact on|off]              show / set per-instance defaults (e.g. compact output)
   help                                 this help
 
 INSTANCES
@@ -128,7 +129,10 @@ async function main(): Promise<number> {
     }
     case "call": {
       const raw = boolFlag(argv, "--raw");
-      const compact = boolFlag(argv, "--compact");
+      // compact: explicit --compact/--no-compact wins; otherwise the config default (mux config compact on)
+      const noCompact = boolFlag(argv, "--no-compact");
+      const compactFlag = boolFlag(argv, "--compact");
+      const compact = noCompact ? false : compactFlag ? true : (loadConfig().defaults?.compact ?? false);
       const timeout = flag(argv, "--timeout");
       let argsJson = flag(argv, "--args");
       // --args - reads JSON from stdin; --args @file from a file — heredoc complex args with no shell quoting
@@ -203,6 +207,21 @@ async function main(): Promise<number> {
     case "secret": {
       const { cmdSecret } = await import("./cli/secret");
       return await cmdSecret(argv);
+    }
+    case "config": {
+      const cfg = loadConfig();
+      if (argv.length === 0) {
+        console.log(`compact: ${cfg.defaults?.compact ? "on" : "off"}   (default output compaction for \`mux call\`)`);
+        return 0;
+      }
+      if (argv[0] === "compact" && (argv[1] === "on" || argv[1] === "off")) {
+        const { setDefault } = await import("./shared/configEdit");
+        setDefault("compact", argv[1] === "on");
+        console.log(`compact default → ${argv[1]}`);
+        return 0;
+      }
+      console.error("usage: mux config              # show defaults\n       mux config compact on|off   # minify JSON output by default");
+      return 1;
     }
     case "auth": {
       const { cmdAuth } = await import("./cli/auth");

@@ -16,7 +16,9 @@ export type ToolCfg = {
   run: string; args?: string[]; env?: Record<string, string>;
   check?: string; setup?: string; note?: string; disabled?: boolean;
 };
-export type Config = { servers: Record<string, ServerCfg>; tools: Record<string, ToolCfg> };
+/** Per-instance defaults applied to every call unless a flag overrides them. */
+export type Defaults = { compact?: boolean };
+export type Config = { servers: Record<string, ServerCfg>; tools: Record<string, ToolCfg>; defaults?: Defaults };
 
 export function loadConfig(): Config {
   const p = configPath();
@@ -46,5 +48,5 @@ export function loadConfig(): Config {
     if (t.env) for (const k of Object.keys(t.env)) t.env[k] = exp(t.env[k]!);
     tools[name] = t;
   }
-  return { servers, tools };
+  return { servers, tools, ...(raw.defaults ? { defaults: raw.defaults } : {}) };
 }
