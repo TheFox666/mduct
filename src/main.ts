@@ -2,18 +2,66 @@ import { configPath, loadConfig } from "./shared/config";
 import { isTransportError, request, socketPath } from "./shared/ipc";
 import { parseArgs, printResult } from "./cli/format";
 
-const HELP = `mcpmux — MCP multiplexer. Commands:
-  mux call <server> <tool> [k=v ...] [--args '<json>'] [--timeout <s>] [--raw]
-  mux tools <server>          mux schema <server> <tool>
-  mux servers                 mux index
-  mux add <name> --url <u> | -- <cmd…>   mux remove/enable/disable <name>
-  mux import [name…]          mux search <query>
-  mux secret set/list/rm <NAME>   mux doctor
-  mux auth <server>          mux hook install claude [--remove]
-  mux run <tool> [args…]      mux tool status / setup <name>
-  mux logs [server]           mux status
-  mux daemon [--stop]         mux help
+function helpText(): string {
+  return `mcpmux — one CLI in front of every MCP server + CLI tool.
+Tool schemas stay OUT of your model context; you call them on demand through mux.
+A background daemon keeps connections (and OAuth sessions) warm between calls.
+
+USAGE
+  mux <command> [args]
+
+CALL & RUN
+  call <server> <tool> [key=value …]   invoke an MCP tool. key=value for flat args;
+       [--args '<json>'] [--timeout <s>] [--raw]   --args for nested, --raw for the full envelope
+  run <tool> [args …]                  run a CLI tool (kubectl/aws/…) with its stored env/wrapping
+  tools <server>                       list a server's tools (compact — no schemas)
+  schema <server> <tool>               full JSON schema of one tool
+  index                                the compact capability block (for prompts / hooks)
+
+SERVERS
+  servers                              configured MCP servers + connection state
+  add                                  no args → interactive picker (↑↓, / search, ⏎ toggle)
+  add <name> -- <cmd …>                add a stdio MCP server
+  add <name> --url <url>               add an http MCP server
+  add <ref>                            install from the public registry (version-pinned)
+  add <name> --tool -- <cmd …>         add a CLI tool  [--check --setup --env K=V --note]
+  remove | enable | disable <name>     remove / toggle a server or tool
+  search <query>                       search the public MCP registry
+  import [<name> …]                    import MCP servers from your Claude configs
+
+CLI TOOLS
+  tool status                          installed? + update hint for pinned npm tools
+  tool setup <name>                    run a tool's installer
+  tool update [<name>]                 bump a pinned npm tool to the latest version
+
+SECRETS & AUTH
+  secret set <NAME>                    store a secret (piped or hidden prompt) → ref as \${NAME}
+  secret list | rm <NAME>              list names (never values) / remove one
+  auth <server>                        OAuth sign-in for an http server (token stored, auto-refreshed)
+
+DAEMON & SETUP
+  status                               daemon up? + which instance (socket/config/secrets)
+  logs [server]                        recent daemon activity (per server if named)
+  daemon [--stop | --install]          run in foreground / stop / install a systemd user unit
+  hook install claude [--remove]       inject \`mux index\` at session start + redirect mcp__* calls
+  doctor                               report MCP servers attached directly that mux already serves
+  help                                 this help
+
+INSTANCES
+  A named instance is one env var: MCPMUX_PROFILE=<name> → ~/.config/mcpmux-<name>/ with its own
+  config, secrets, auth and daemon socket (mirrors ~/.claude vs ~/.claude-agent-office).
+  No profile → the default ~/.config/mcpmux/. \`mux status\` shows which instance answered.
+
+EXAMPLES
+  mux call gitlab list_issues state=opened
+  mux call hive search_code query="parseArgs" --timeout 30
+  mux run kubectl get pods -n zep
+  echo "\$TOKEN" | mux secret set GITLAB_PAT
+  mux add com.linear/mcp --as linear
+  MCPMUX_PROFILE=office mux servers
+
 Config: ${configPath()}`;
+}
 
 function flag(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(name);
@@ -164,7 +212,7 @@ async function main(): Promise<number> {
       console.log(`secrets: ${secretsPath()}`);
       return 0;
     }
-    default: console.log(HELP); return cmd === "help" ? 0 : 1;
+    default: console.log(helpText()); return cmd === "help" ? 0 : 1;
   }
 }
 
