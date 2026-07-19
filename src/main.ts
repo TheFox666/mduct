@@ -89,6 +89,8 @@ async function main(): Promise<number> {
       return 0;
     case "servers": {
       const list = (await daemonRequest("servers", {})) as { name: string; connected: boolean; disabled: boolean; note?: string }[];
+      // instance header on stderr so it's visible to humans but stdout stays clean for parsing
+      process.stderr.write(`# instance: ${configPath()}\n`);
       for (const s of list)
         console.log(`${s.name.padEnd(16)} ${s.disabled ? "disabled" : s.connected ? "connected" : "idle"}${s.note ? `  — ${s.note}` : ""}`);
       return 0;
@@ -151,8 +153,15 @@ async function main(): Promise<number> {
     }
     case "logs": console.log(((await daemonRequest("logs", { server: argv[0] })) as string[]).join("\n")); return 0;
     case "status": {
-      try { await request(socketPath(), "ping", {}, 1500); console.log(`daemon: up (${socketPath()})`); }
-      catch { console.log(`daemon: down (${socketPath()})`); }
+      const { secretsPath } = await import("./shared/secrets");
+      const sock = socketPath();
+      let up = false;
+      try { up = (await request(sock, "ping", {}, 1500)) === "pong"; } catch { /* down */ }
+      // print the full instance identity so it's obvious WHICH mux (personal vs office etc.)
+      console.log(`daemon:  ${up ? "up" : "down"}`);
+      console.log(`socket:  ${sock}`);
+      console.log(`config:  ${configPath()}`);
+      console.log(`secrets: ${secretsPath()}`);
       return 0;
     }
     default: console.log(HELP); return cmd === "help" ? 0 : 1;
