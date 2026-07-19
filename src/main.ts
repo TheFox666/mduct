@@ -13,7 +13,8 @@ USAGE
 CALL & RUN
   call <server> <tool> [key=value …]   invoke an MCP tool. key=value = scalar (coerced);
        [key:=<json> …]                        key:=<json> = a JSON value (arrays/objects/typed);
-       [--args '<json>'] [--timeout <s>] [--raw]   --args merges a whole object; --raw = full envelope
+       [--args '<json>' | - | @file]          --args merges an object (- = stdin, @file = a file)
+       [--timeout <s>] [--raw] [--compact]    --raw = full compact envelope; --compact minifies JSON output
   run <tool> [args …]                  run a CLI tool (kubectl/aws/…) with its stored env/wrapping
   tools <server>                       list a server's tools (compact — no schemas)
   schema <server> <tool>               full JSON schema of one tool
@@ -127,6 +128,7 @@ async function main(): Promise<number> {
     }
     case "call": {
       const raw = boolFlag(argv, "--raw");
+      const compact = boolFlag(argv, "--compact");
       const timeout = flag(argv, "--timeout");
       let argsJson = flag(argv, "--args");
       // --args - reads JSON from stdin; --args @file from a file — heredoc complex args with no shell quoting
@@ -146,7 +148,7 @@ async function main(): Promise<number> {
       const ARGS_ERR = /-32602|validation|invalid arguments?|is required|missing|no tool|not found|unknown tool/i;
       try {
         const res = await daemonRequest("call", { server, tool, args: parseArgs(pairs, argsJson), timeoutMs }, ipcTimeout) as { content?: { type?: string; text?: string }[]; isError?: boolean };
-        const code = printResult(res as any, raw);
+        const code = printResult(res as any, { raw, compact });
         if (code !== 0 && !raw) {
           const text = (res.content ?? []).map((c) => (c.type === "text" ? c.text : "")).join(" ");
           if (ARGS_ERR.test(text)) process.stderr.write((await callErrorHint(server, tool)).replace(/^\n/, "") + "\n");

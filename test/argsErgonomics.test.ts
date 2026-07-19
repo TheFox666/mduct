@@ -1,5 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { parseArgs, toolSignature } from "../src/cli/format";
+import { parseArgs, printResult, toolSignature } from "../src/cli/format";
+
+function capture(fn: () => void): string {
+  const out: string[] = [];
+  const orig = console.log;
+  console.log = (s?: unknown) => { out.push(String(s)); };
+  try { fn(); } finally { console.log = orig; }
+  return out.join("\n");
+}
+
+describe("printResult output compaction", () => {
+  test("--compact losslessly minifies JSON-parseable text content", () => {
+    const s = capture(() => printResult({ content: [{ type: "text", text: '{\n  "a": 1,\n  "b": [1, 2]\n}' }] }, { compact: true }));
+    expect(s).toBe('{"a":1,"b":[1,2]}');
+  });
+  test("--compact leaves prose (non-JSON) untouched", () => {
+    const s = capture(() => printResult({ content: [{ type: "text", text: "just some prose" }] }, { compact: true }));
+    expect(s).toBe("just some prose");
+  });
+  test("--raw emits a compact envelope (no pretty-print indentation)", () => {
+    const s = capture(() => printResult({ content: [{ type: "text", text: "x" }] }, { raw: true }));
+    expect(s).not.toMatch(/\n\s+/); // no indented lines
+    expect(JSON.parse(s)).toEqual({ content: [{ type: "text", text: "x" }] });
+  });
+});
 
 describe("toolSignature", () => {
   test("required plain, optional with ?", () => {

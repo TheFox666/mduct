@@ -10,14 +10,23 @@ function mediaDir(): string {
   return mkdtempSync(join(root, "r-"));
 }
 
-/** Print a CallResult per the output contract. Returns process exit code. */
-export function printResult(res: { content: unknown[]; isError?: boolean }, raw: boolean): number {
-  if (raw) { console.log(JSON.stringify(res, null, 2)); return res.isError ? 1 : 0; }
+/** Minify a string IF it's valid JSON (strips pretty-print whitespace, lossless); else return as-is. */
+function minifyIfJson(s: string): string {
+  const t = s.trimStart();
+  if (t[0] !== "{" && t[0] !== "[") return s; // cheap gate — most prose isn't JSON
+  try { return JSON.stringify(JSON.parse(s)); } catch { return s; }
+}
+
+/** Print a CallResult per the output contract. Returns process exit code.
+ *  raw → the full envelope as COMPACT json (token-efficient; pipe to `jq .` if you want it pretty).
+ *  compact → losslessly minify any JSON-parseable text content (strips server pretty-print). */
+export function printResult(res: { content: unknown[]; isError?: boolean }, opts: { raw?: boolean; compact?: boolean }): number {
+  if (opts.raw) { console.log(JSON.stringify(res)); return res.isError ? 1 : 0; }
   const lines: string[] = [];
   let dir: string | null = null;
   for (const [i, c0] of (res.content ?? []).entries()) {
     const c = c0 as any;
-    if (c.type === "text") lines.push(c.text);
+    if (c.type === "text") lines.push(opts.compact ? minifyIfJson(c.text) : c.text);
     else if (c.data && c.mimeType) {
       const ext = String(c.mimeType).split("/")[1]?.split("+")[0] ?? "bin";
       dir ??= mediaDir();
