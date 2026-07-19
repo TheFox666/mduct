@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -10,7 +10,7 @@ export function socketPath(): string {
 
 export type Handler = (method: string, params: any) => Promise<unknown>;
 
-/** Tag connect-level failures so callers can tell "daemon down" from an application error. */
+/** Tag connect-level failures so callers tell "daemon down" (respawn) from an application error. */
 function markTransport(e: unknown): Error {
   const err = e instanceof Error ? e : new Error(String(e));
   (err as Error & { transport?: boolean }).transport = true;
@@ -21,28 +21,62 @@ export function isTransportError(e: unknown): boolean {
   return !!(e as { transport?: boolean } | null)?.transport;
 }
 
+/** Backpressure-safe write: keep writing until every byte is flushed, resuming on `drain`. */
+function makeWriter(sock: { write(data: Uint8Array): number }, queueDrain: (fn: () => void) => void) {
+  return (text: string): void => {
+    const bytes = new TextEncoder().encode(text);
+    let off = 0;
+    const pump = () => {
+      while (off < bytes.length) {
+        const n = sock.write(bytes.subarray(off));
+        if (n <= 0) { queueDrain(pump); return; } // buffer full — Bun calls drain later (#10)
+        off += n;
+      }
+    };
+    pump();
+  };
+}
+
+/** Is a live daemon already answering on this socket? (probe before we consider it stale) */
+export async function socketAlive(path: string): Promise<boolean> {
+  if (!existsSync(path)) return false;
+  try { return (await request(path, "ping", {}, 1500)) === "pong"; }
+  catch { return false; }
+}
+
 export function serveIpc(path: string, handler: Handler): { stop(): void } {
-  mkdirSync(dirname(path), { recursive: true });
-  const server = Bun.listen<{ buf: string }>({
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  // A crashed daemon leaves a stale socket file → Bun.listen would EADDRINUSE. The caller
+  // (startDaemon) probes socketAlive() first and refuses to start over a live one, so an
+  // existing file here is stale and safe to remove (#22, foreground-debug path).
+  if (existsSync(path)) rmSync(path, { force: true });
+  const server = Bun.listen<{ buf: string; dec: TextDecoder; drains: (() => void)[] }>({
     unix: path,
     socket: {
-      open(sock) { sock.data = { buf: "" }; },
+      open(sock) { sock.data = { buf: "", dec: new TextDecoder(), drains: [] }; },
+      drain(sock) { const d = sock.data.drains; sock.data.drains = []; for (const fn of d) fn(); },
       data(sock, chunk) {
-        sock.data.buf += chunk.toString();
+        const write = makeWriter(sock, (fn) => sock.data.drains.push(fn));
+        sock.data.buf += sock.data.dec.decode(chunk, { stream: true }); // stream: no mid-codepoint split (#8)
         let nl: number;
         while ((nl = sock.data.buf.indexOf("\n")) >= 0) {
           const line = sock.data.buf.slice(0, nl);
           sock.data.buf = sock.data.buf.slice(nl + 1);
           if (!line.trim()) continue;
-          const { id, method, params } = JSON.parse(line);
-          handler(method, params).then(
-            (result) => sock.write(JSON.stringify({ id, result }) + "\n"),
-            (e) => sock.write(JSON.stringify({ id, error: { message: String((e as Error).message ?? e) } }) + "\n"),
+          let msg: { id: unknown; method: string; params: unknown };
+          try { msg = JSON.parse(line); } catch {
+            write(JSON.stringify({ id: null, error: { message: "malformed request (not JSON)" } }) + "\n");
+            continue; // one bad line never crashes the daemon (#9)
+          }
+          handler(msg.method, msg.params).then(
+            (result) => write(JSON.stringify({ id: msg.id, result }) + "\n"),
+            (e) => write(JSON.stringify({ id: msg.id, error: { message: String((e as Error).message ?? e) } }) + "\n"),
           );
         }
       },
     },
   });
+  try { chmodSync(path, 0o600); } catch { /* best effort; dir is already 0700 */ }
   return { stop: () => server.stop(true) };
 }
 
@@ -50,25 +84,33 @@ export async function request(path: string, method: string, params: unknown, tim
   return await new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
     let buf = "";
-    let sock: { end(): void } | undefined;
+    const dec = new TextDecoder();
+    let opened = false; // after open, a socket error is NOT a connect failure — never respawn/retry (#1)
+    let drains: (() => void)[] = [];
+    let sock: { end(): void; write(d: Uint8Array): number } | undefined;
     const timer = setTimeout(() => {
-      reject(new Error(`daemon did not answer within ${timeoutMs}ms — check: mux status`));
+      reject(markTransport(new Error(`daemon did not answer within ${timeoutMs}ms — check: mux status`)));
       sock?.end();
     }, timeoutMs);
     Bun.connect({
       unix: path,
       socket: {
-        open(s) { sock = s; s.write(JSON.stringify({ id, method, params }) + "\n"); },
+        open(s) {
+          opened = true; sock = s;
+          makeWriter(s, (fn) => drains.push(fn))(JSON.stringify({ id, method, params }) + "\n");
+        },
+        drain() { const d = drains; drains = []; for (const fn of d) fn(); },
         data(s, chunk) {
-          buf += chunk.toString();
+          buf += dec.decode(chunk, { stream: true });
           const nl = buf.indexOf("\n");
-          if (nl < 0) return;
+          if (nl < 0) return; // response line incomplete — keep buffering (#10)
           clearTimeout(timer);
-          const msg = JSON.parse(buf.slice(0, nl));
+          let msg: { error?: { message: string }; result?: unknown };
+          try { msg = JSON.parse(buf.slice(0, nl)); } catch (e) { reject(e); s.end(); return; }
           msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result);
           s.end();
         },
-        error(_s, e) { clearTimeout(timer); reject(markTransport(e)); },
+        error(_s, e) { clearTimeout(timer); reject(opened ? (e instanceof Error ? e : new Error(String(e))) : markTransport(e)); },
       },
     }).catch((e) => { clearTimeout(timer); reject(markTransport(e)); });
   });

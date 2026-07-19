@@ -1,11 +1,14 @@
 import { existsSync, watch } from "node:fs";
 import { configPath, loadConfig, type Config } from "../shared/config";
 import { ServerConnection } from "./connection";
-import { serveIpc, socketPath } from "../shared/ipc";
+import { serveIpc, socketAlive, socketPath } from "../shared/ipc";
 
 const LOG_CAP = 500;
 
 export async function startDaemon(): Promise<{ stop(): Promise<void> }> {
+  // Refuse to start over a live daemon — otherwise a racing autostart would bind a
+  // second listener and orphan the first (with its MCP children) (#15).
+  if (await socketAlive(socketPath())) throw new Error(`daemon already running on ${socketPath()}`);
   let config: Config = loadConfig();
   const conns = new Map<string, ServerConnection>();
   const lastUsed = new Map<string, number>();

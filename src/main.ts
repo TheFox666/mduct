@@ -1,4 +1,3 @@
-import { existsSync, rmSync } from "node:fs";
 import { configPath, loadConfig } from "./shared/config";
 import { isTransportError, request, socketPath } from "./shared/ipc";
 import { parseArgs, printResult } from "./cli/format";
@@ -34,16 +33,16 @@ function selfCmd(extra: string[]): string[] {
   return entry.startsWith("/$bunfs") || entry === "" ? [process.execPath, ...extra] : [process.execPath, entry, ...extra];
 }
 
-async function daemonRequest(method: string, params: unknown): Promise<unknown> {
+async function daemonRequest(method: string, params: unknown, timeoutMs?: number): Promise<unknown> {
   const sock = socketPath();
-  try { return await request(sock, method, params); }
+  try { return await request(sock, method, params, timeoutMs); }
   catch (e) {
-    if (!isTransportError(e)) throw e; // application error — daemon is fine, don't respawn
-    if (existsSync(sock)) rmSync(sock, { force: true }); // stale socket from a dead daemon
+    if (!isTransportError(e)) throw e; // application error — daemon is fine, don't respawn (#1)
     Bun.spawn(selfCmd(["daemon"]), { stdout: "ignore", stderr: "ignore", stdin: "ignore" }).unref();
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 250));
-      try { return await request(sock, method, params); } catch { /* not up yet */ }
+      try { return await request(sock, method, params, timeoutMs); }
+      catch (e2) { if (!isTransportError(e2)) throw e2; /* daemon up, real error — surface it (N3) */ }
     }
     throw new Error(`daemon did not come up on ${sock} — try: mux daemon (foreground) to see why`);
   }
@@ -66,10 +65,15 @@ async function main(): Promise<number> {
       const argsJson = flag(argv, "--args");
       const [server, tool, ...pairs] = argv;
       if (!server || !tool) { console.error("usage: mux call <server> <tool> [k=v ...] — see: mux servers"); return 1; }
-      const res = await daemonRequest("call", {
-        server, tool, args: parseArgs(pairs, argsJson),
-        timeoutMs: timeout ? Number(timeout) * 1000 : undefined,
-      });
+      let timeoutMs: number | undefined;
+      if (timeout !== undefined) {
+        const n = Number(timeout);
+        if (!Number.isFinite(n) || n <= 0) { console.error(`bad --timeout "${timeout}" — seconds, e.g. --timeout 30`); return 1; }
+        timeoutMs = n * 1000;
+      }
+      // IPC wait must outlast the tool timeout, or a legit long call is killed at the 120s default (#11)
+      const ipcTimeout = timeoutMs ? timeoutMs + 10_000 : undefined;
+      const res = await daemonRequest("call", { server, tool, args: parseArgs(pairs, argsJson), timeoutMs }, ipcTimeout);
       return printResult(res as any, raw);
     }
     case "tools": {
