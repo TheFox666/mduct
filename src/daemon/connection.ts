@@ -3,6 +3,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ServerCfg } from "../shared/config";
 import { guardAllows } from "./guard";
+import { FileOAuthProvider } from "./oauthProvider";
 
 export type ToolInfo = { name: string; description?: string; inputSchema?: unknown };
 export type CallResult = { content: unknown[]; isError?: boolean };
@@ -39,7 +40,12 @@ export class ServerConnection {
             args: this.cfg.args ?? [],
             env: { ...process.env, ...this.cfg.env } as Record<string, string>,
           })
-        : new StreamableHTTPClientTransport(new URL(this.cfg.url!), { requestInit: { headers: this.cfg.headers } });
+        : new StreamableHTTPClientTransport(new URL(this.cfg.url!), {
+            requestInit: { headers: this.cfg.headers },
+            // oauth servers: the SDK auto-uses/refreshes stored tokens; a 401 with no valid
+            // session surfaces as an error telling the user to run `mux auth <server>`
+            ...(this.cfg.auth === "oauth" ? { authProvider: new FileOAuthProvider(this.name, "http://127.0.0.1:0/cb") } : {}),
+          });
       // transport death → drop the dead client so the next call reconnects transparently (#5)
       transport.onclose = () => { if (this.client === client) this.drop(); };
       await client.connect(transport);

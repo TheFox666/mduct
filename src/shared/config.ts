@@ -6,7 +6,7 @@ import { expandEnv, stripJsonc } from "./util";
 
 export type ServerCfg = {
   command?: string; args?: string[]; env?: Record<string, string>;
-  url?: string; headers?: Record<string, string>;
+  url?: string; headers?: Record<string, string>; auth?: "oauth";
   guard?: { allow?: string[]; deny?: string[] };
   idleTtlMin?: number; note?: string; disabled?: boolean;
 };
