@@ -103,7 +103,10 @@ extendable. `mux add --from-claude` imports selectively, grouped by source.
 `mux search <query>` queries the official MCP registry. Bare `mux add` opens
 an interactive picker (list, `/` filter, Enter toggles install/uninstall,
 installed entries marked) — human UI only; agents use the non-interactive
-forms which do exactly the same. Registry manifests prompt for required env
+forms which do exactly the same. That parity is a hard requirement, not a
+convenience: every management operation (search/add/remove/auth-status/doctor)
+MUST be fully scriptable without a TTY, so an agent can install and manage MCP
+servers end to end — UX and AX (agent experience) are co-equal interfaces. Registry manifests prompt for required env
 vars on install.
 
 ## Guard
