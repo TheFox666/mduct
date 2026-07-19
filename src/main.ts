@@ -7,6 +7,7 @@ const HELP = `mcpmux — MCP multiplexer. Commands:
   mux call <server> <tool> [k=v ...] [--args '<json>'] [--timeout <s>] [--raw]
   mux tools <server>          mux schema <server> <tool>
   mux servers                 mux index
+  mux add <name> --url <u> | -- <cmd…>   mux remove/enable/disable <name>
   mux logs [server]           mux status
   mux daemon [--stop]         mux help
 Config: ${configPath()}`;
@@ -90,6 +91,19 @@ async function main(): Promise<number> {
       console.log("MCP tools available via `mux` CLI (details: mux tools <server>; call: mux call <server> <tool> key=value):");
       for (const [name, s] of names) console.log(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
       return 0;
+    }
+    case "add": {
+      const { cmdAdd } = await import("./cli/manage");
+      return cmdAdd(argv);
+    }
+    case "remove": {
+      const { cmdRemove } = await import("./cli/manage");
+      return cmdRemove(argv[0]);
+    }
+    case "enable":
+    case "disable": {
+      const { cmdSetDisabled } = await import("./cli/manage");
+      return cmdSetDisabled(argv[0], cmd === "disable");
     }
     case "logs": console.log(((await daemonRequest("logs", { server: argv[0] })) as string[]).join("\n")); return 0;
     case "status": {
