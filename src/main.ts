@@ -298,7 +298,20 @@ async function main(): Promise<number> {
   }
 }
 
+/**
+ * Exit AFTER stdout/stderr have drained. process.exit() drops un-drained writes to a slow pipe —
+ * a big `--json` result read by jq (which buffers before parsing) fills the ~64KB pipe buffer, and
+ * exiting mid-write truncates it. The empty write's callback fires behind all prior chunks, so
+ * awaiting it is a flush barrier.
+ */
+async function flushExit(code: number): Promise<void> {
+  await Promise.all([
+    new Promise<void>((r) => process.stdout.write("", () => r())),
+    new Promise<void>((r) => process.stderr.write("", () => r())),
+  ]);
+  process.exit(code);
+}
 main().then(
-  (code) => process.exit(code),
-  (e) => { console.error(String((e as Error).message ?? e)); process.exit(1); },
+  (code) => flushExit(code),
+  (e) => { console.error(String((e as Error).message ?? e)); void flushExit(1); },
 );

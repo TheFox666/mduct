@@ -1,6 +1,19 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+/** Write to stdout SYNCHRONOUSLY and COMPLETELY (fd 1). Two traps this avoids: (1) console.log is
+ *  async on a pipe, so process.exit() drops the un-drained tail of a big payload; (2) a single
+ *  writeSync only pushes one pipe buffer (~64KB) and returns a SHORT count — the rest is silently
+ *  lost. So loop until every byte is written, retrying EAGAIN when the pipe is momentarily full. */
+function emit(s: string): void {
+  const buf = Buffer.from(`${s}\n`);
+  let off = 0;
+  while (off < buf.length) {
+    try { off += writeSync(1, buf, off, buf.length - off); }
+    catch (e) { if ((e as NodeJS.ErrnoException).code === "EAGAIN") continue; throw e; } // pipe full → retry
+  }
+}
 
 /** Private, per-invocation dir for binary content — NOT a shared, predictable /tmp path (#14). */
 function mediaDir(): string {
@@ -91,18 +104,22 @@ function oversizeWarning(chars: number, server: string, tool: string, r: Recipe)
   ].join("\n");
 }
 
-/** Print a CallResult per the output contract. Returns process exit code.
- *  raw → the full envelope as COMPACT json (token-efficient; pipe to `jq .` if you want it pretty).
- *  json → ONLY the JSON payload (the data block, prose stripped), minified — clean to pipe to jq
- *    on any server; falls back to the text output when the result holds no JSON.
+export type CallOpts = { raw?: boolean; json?: boolean; compact?: boolean; full?: boolean; warnAbove?: number; server?: string; tool?: string };
+export type Formatted = { out?: string; err?: string; code: number };
+
+/** Compute a call result's output per the contract — PURE except for writing embedded media to disk.
+ *  Returns what goes to stdout (out) / stderr (err) + the exit code; the CLI writes it, tests read it.
+ *  raw → the full envelope as COMPACT json (pipe to `jq .` to pretty it).
+ *  json → ONLY the JSON payload (data block, prose stripped), minified — clean to pipe on any server;
+ *    falls back to text output when the result holds no JSON.
  *  compact → losslessly minify any JSON-parseable text content (strips server pretty-print).
- *  warnAbove (chars) → when the printed output exceeds it and holds a projectable list, print a
- *    slim-it-first warning to stderr instead of the blob (return 2); --full/--json bypass the guard. */
-export function printResult(res: { content: unknown[]; isError?: boolean }, opts: { raw?: boolean; json?: boolean; compact?: boolean; full?: boolean; warnAbove?: number; server?: string; tool?: string }): number {
-  if (opts.raw) { console.log(JSON.stringify(res)); return res.isError ? 1 : 0; }
+ *  warnAbove (chars) → oversized + projectable list → a slim-it-first warning on stderr (code 2)
+ *    instead of the blob; --full/--json bypass the guard. */
+export function formatResult(res: { content: unknown[]; isError?: boolean }, opts: CallOpts): Formatted {
+  if (opts.raw) return { out: JSON.stringify(res), code: res.isError ? 1 : 0 };
   if (opts.json && !res.isError) {
     const payload = jsonPayload(res);
-    if (payload !== undefined) { console.log(JSON.stringify(payload)); return 0; }
+    if (payload !== undefined) return { out: JSON.stringify(payload), code: 0 };
     // no JSON in the result → fall through to normal text output (nothing to pipe)
   }
   const lines: string[] = [];
@@ -119,16 +136,24 @@ export function printResult(res: { content: unknown[]; isError?: boolean }, opts
     } else lines.push(JSON.stringify(c));
   }
   const text = lines.join("\n");
-  if (res.isError) { console.error(text); return 1; }
+  if (res.isError) return { err: text, code: 1 };
   // size guard: keep an oversized dump out of the caller's context (only when we can suggest a
-  // projection — otherwise printing is the only useful thing we can do). Find the JSON among the
-  // content blocks, not in the joined text, so a prose-prefixed result (GitLab) still triggers.
+  // projection). Find the JSON among the content blocks, not in the joined text, so a prose-prefixed
+  // result (GitLab: "Found N …" + the JSON in a separate block) still triggers.
   if (!opts.full && !opts.json && opts.warnAbove && text.length > opts.warnAbove) {
     const r = projectionRecipe(jsonPayload(res));
-    if (r) { process.stderr.write(`${oversizeWarning(text.length, opts.server ?? "<server>", opts.tool ?? "<tool>", r)}\n`); return 2; }
+    if (r) return { err: oversizeWarning(text.length, opts.server ?? "<server>", opts.tool ?? "<tool>", r), code: 2 };
   }
-  console.log(text);
-  return 0;
+  return { out: text, code: 0 };
+}
+
+/** Print a call result: stdout SYNC via emit() (never truncates a big --json under a slow pipe),
+ *  stderr for warnings/errors. Returns the exit code. */
+export function printResult(res: { content: unknown[]; isError?: boolean }, opts: CallOpts): number {
+  const { out, err, code } = formatResult(res, opts);
+  if (out !== undefined) emit(out);
+  if (err !== undefined) process.stderr.write(`${err}\n`);
+  return code;
 }
 
 /**

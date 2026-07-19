@@ -1,43 +1,30 @@
 import { describe, expect, test } from "bun:test";
-import { parseArgs, printResult, toolSignature } from "../src/cli/format";
+import { formatResult, parseArgs, toolSignature } from "../src/cli/format";
 
-function capture(fn: () => void): string {
-  const out: string[] = [];
-  const orig = console.log;
-  console.log = (s?: unknown) => { out.push(String(s)); };
-  try { fn(); } finally { console.log = orig; }
-  return out.join("\n");
+// formatResult is pure → test its returned {out,err,code} directly (no console capture). Normalise
+// the optional out/err to "" so the existing assertions read cleanly.
+function fmt(content: unknown[], opts: Parameters<typeof formatResult>[1]) {
+  const r = formatResult({ content }, opts);
+  return { out: r.out ?? "", err: r.err ?? "", code: r.code };
 }
 
-describe("printResult output compaction", () => {
+describe("formatResult output compaction", () => {
   test("--compact losslessly minifies JSON-parseable text content", () => {
-    const s = capture(() => printResult({ content: [{ type: "text", text: '{\n  "a": 1,\n  "b": [1, 2]\n}' }] }, { compact: true }));
-    expect(s).toBe('{"a":1,"b":[1,2]}');
+    expect(fmt([{ type: "text", text: '{\n  "a": 1,\n  "b": [1, 2]\n}' }], { compact: true }).out).toBe('{"a":1,"b":[1,2]}');
   });
   test("--compact leaves prose (non-JSON) untouched", () => {
-    const s = capture(() => printResult({ content: [{ type: "text", text: "just some prose" }] }, { compact: true }));
-    expect(s).toBe("just some prose");
+    expect(fmt([{ type: "text", text: "just some prose" }], { compact: true }).out).toBe("just some prose");
   });
   test("--raw emits a compact envelope (no pretty-print indentation)", () => {
-    const s = capture(() => printResult({ content: [{ type: "text", text: "x" }] }, { raw: true }));
+    const s = fmt([{ type: "text", text: "x" }], { raw: true }).out;
     expect(s).not.toMatch(/\n\s+/); // no indented lines
     expect(JSON.parse(s)).toEqual({ content: [{ type: "text", text: "x" }] });
   });
 });
 
-function run(fn: () => number): { out: string; err: string; code: number } {
-  const out: string[] = [], err: string[] = [];
-  const ol = console.log, oe = process.stderr.write;
-  console.log = (s?: unknown) => { out.push(String(s)); };
-  (process.stderr as unknown as { write: (s: unknown) => boolean }).write = (s: unknown) => { err.push(String(s)); return true; };
-  let code = 0;
-  try { code = fn(); } finally { console.log = ol; process.stderr.write = oe; }
-  return { out: out.join("\n"), err: err.join(""), code };
-}
-
-describe("printResult oversized-list guard (warnAbove)", () => {
+describe("formatResult oversized-list guard (warnAbove)", () => {
   const big = JSON.stringify({ issues: Array.from({ length: 40 }, (_, i) => ({ id: `X-${i}`, title: `t${i}`, status: "open", description: "d".repeat(200) })) });
-  const call = (opts: Record<string, unknown>) => run(() => printResult({ content: [{ type: "text", text: big }] }, { compact: true, warnAbove: 200, server: "lin", tool: "list_issues", ...opts }));
+  const call = (opts: Record<string, unknown>) => fmt([{ type: "text", text: big }], { compact: true, warnAbove: 200, server: "lin", tool: "list_issues", ...opts });
 
   test("over threshold: warns to stderr with a real projection, prints nothing, returns 2", () => {
     const r = call({});
@@ -58,7 +45,7 @@ describe("printResult oversized-list guard (warnAbove)", () => {
     { type: "text", text: JSON.stringify(Array.from({ length: 40 }, (_, i) => ({ id: i, iid: 1000 + i, title: `MR ${i}`, web_url: `https://x/${i}`, state: "opened", description: "d".repeat(200) }))) },
   ];
   test("guard fires on a prose-prefixed two-block result (GitLab-style)", () => {
-    const r = run(() => printResult({ content: gitlabBlocks }, { compact: true, warnAbove: 200, server: "gitlab", tool: "list_merge_requests" }));
+    const r = fmt(gitlabBlocks, { compact: true, warnAbove: 200, server: "gitlab", tool: "list_merge_requests" });
     expect(r.code).toBe(2);
     expect(r.out).toBe("");
     expect(r.err).toContain("map({"); // top-level array → no ".issues" prefix
@@ -66,7 +53,7 @@ describe("printResult oversized-list guard (warnAbove)", () => {
     expect(r.err).toContain("description"); // dropped
   });
   test("--json emits only the JSON payload, stripping the prose block", () => {
-    const r = run(() => printResult({ content: gitlabBlocks }, { json: true }));
+    const r = fmt(gitlabBlocks, { json: true });
     expect(r.code).toBe(0);
     expect(r.err).toBe("");
     expect(r.out).not.toContain("Found 40"); // prose gone
@@ -79,13 +66,13 @@ describe("printResult oversized-list guard (warnAbove)", () => {
     expect(r.out).toBe(big); // already minified (compact); lossless
   });
   test("over threshold but not JSON/projectable → prints normally (never cry wolf)", () => {
-    const r = run(() => printResult({ content: [{ type: "text", text: "x".repeat(500) }] }, { warnAbove: 200, server: "s", tool: "t" }));
+    const r = fmt([{ type: "text", text: "x".repeat(500) }], { warnAbove: 200, server: "s", tool: "t" });
     expect(r.code).toBe(0);
     expect(r.out).toBe("x".repeat(500));
     expect(r.err).toBe("");
   });
   test("under threshold → prints normally", () => {
-    const r = run(() => printResult({ content: [{ type: "text", text: '{"a":1}' }] }, { compact: true, warnAbove: 200 }));
+    const r = fmt([{ type: "text", text: '{"a":1}' }], { compact: true, warnAbove: 200 });
     expect(r.code).toBe(0);
     expect(r.out).toBe('{"a":1}');
   });
