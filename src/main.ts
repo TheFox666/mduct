@@ -10,6 +10,7 @@ const HELP = `mcpmux — MCP multiplexer. Commands:
   mux import [name…]          mux search <query>
   mux secret set/list/rm <NAME>   mux doctor
   mux hook install claude [--remove]
+  mux run <tool> [args…]      mux tool status / setup <name>
   mux logs [server]           mux status
   mux daemon [--stop]         mux help
 Config: ${configPath()}`;
@@ -92,12 +93,17 @@ async function main(): Promise<number> {
       return 0;
     }
     case "index": {
-      const cfg = loadConfig(); // no daemon needed: index must work in hooks even when cold
-      const names = Object.entries(cfg.servers).filter(([, s]) => !s.disabled);
-      if (names.length === 0) return 0;
-      console.log("MCP tools available via `mux` CLI (details: mux tools <server>; call: mux call <server> <tool> key=value):");
-      for (const [name, s] of names) console.log(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
+      const { renderIndex } = await import("./cli/format");
+      for (const line of renderIndex(loadConfig())) console.log(line); // no daemon needed — works cold in hooks
       return 0;
+    }
+    case "run": {
+      const { cmdRun } = await import("./cli/tool");
+      return await cmdRun(argv);
+    }
+    case "tool": {
+      const { cmdTool } = await import("./cli/tool");
+      return await cmdTool(argv);
     }
     case "add": {
       const { cmdAdd } = await import("./cli/manage");

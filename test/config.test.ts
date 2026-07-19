@@ -17,7 +17,7 @@ function withCfg(content: string): Config0 {
 describe("loadConfig", () => {
   test("missing file yields empty servers", () => {
     process.env.MCPMUX_CONFIG = "/nonexistent/servers.jsonc";
-    expect(loadConfig()).toEqual({ servers: {} });
+    expect(loadConfig()).toEqual({ servers: {}, tools: {} });
   });
 
   test("parses jsonc, expands env in env/headers/args/url", () => {

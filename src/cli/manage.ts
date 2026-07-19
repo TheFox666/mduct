@@ -1,5 +1,5 @@
-import type { ServerCfg } from "../shared/config";
-import { addServer, externalizeSecrets, removeServer, setDisabled } from "../shared/configEdit";
+import type { ServerCfg, ToolCfg } from "../shared/config";
+import { addServer, addTool, externalizeSecrets, externalizeToolSecrets, removeServer, setDisabled } from "../shared/configEdit";
 import { searchRegistry, toServerCfg } from "../shared/registry";
 
 export async function cmdSearch(query: string | undefined): Promise<number> {
@@ -62,8 +62,11 @@ function cmdAddManual(argv: string[]): number {
     return true;
   };
 
+  const isTool = takeBool("--tool");
   const url = take("--url");
   const note = take("--note");
+  const check = take("--check");
+  const setup = take("--setup");
   const replace = takeBool("--replace");
   const env: Record<string, string> = {};
   let e: string | undefined;
@@ -73,8 +76,25 @@ function cmdAddManual(argv: string[]): number {
     env[e.slice(0, eq)] = e.slice(eq + 1);
   }
   const name = head[0];
+
+  if (isTool) {
+    if (!name || command.length === 0) {
+      console.error("usage: mux add <name> --tool [--check <cmd>] [--setup <cmd>] [--env K=V] [--note text] -- <command…>");
+      return 1;
+    }
+    const tool: ToolCfg = {
+      run: command[0]!, ...(command.length > 1 ? { args: command.slice(1) } : {}),
+      ...(Object.keys(env).length ? { env } : {}), ...(check ? { check } : {}), ...(setup ? { setup } : {}), ...(note ? { note } : {}),
+    };
+    // env literals still go to the secret store; the tool config keeps ${refs}
+    const externalized = externalizeToolSecrets(name, tool);
+    addTool(name, externalized, { replace });
+    console.log(`added tool: ${name} — try: mux run ${name}`);
+    return 0;
+  }
+
   if (!name || (!url && command.length === 0)) {
-    console.error("usage: mux add <name> --url <url> | mux add <name> -- <command…>  [--env K=V] [--note text] [--replace]");
+    console.error("usage: mux add <name> --url <url> | mux add <name> -- <command…>  [--env K=V] [--note text] [--replace]\n       mux add <name> --tool -- <command…>   (register a CLI tool)");
     return 1;
   }
   const cfg: ServerCfg = url

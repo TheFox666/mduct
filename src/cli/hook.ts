@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { discoverClaudeSources } from "../shared/claudeConfigs";
 import { loadConfig } from "../shared/config";
+import { renderIndex } from "./format";
 
 /**
  * Hook handlers ARE mux subcommands — no script files to install or drift.
@@ -22,13 +23,9 @@ export function hookRunSessionStart(): number {
     console.log(`(mcpmux: config unreadable — ${(e as Error).message})`);
     return 0;
   }
-  const names = Object.entries(cfg.servers).filter(([, s]) => !s.disabled);
-  if (names.length) {
-    console.log("MCP tools available via `mux` CLI (details: mux tools <server>; call: mux call <server> <tool> key=value):");
-    for (const [name, s] of names) console.log(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
-  }
+  for (const line of renderIndex(cfg)) console.log(line);
   // migration nudge: direct-attached servers that mux already serves
-  const muxNames = new Set(names.map(([n]) => n));
+  const muxNames = new Set(Object.keys(cfg.servers).filter((n) => !cfg.servers[n]!.disabled));
   const home = process.env.MCPMUX_HOME;
   for (const src of discoverClaudeSources(home ? { home } : {})) {
     const both = Object.keys(src.servers).filter((n) => muxNames.has(n));

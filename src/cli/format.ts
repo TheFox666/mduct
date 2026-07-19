@@ -49,6 +49,22 @@ function coerce(v: string): unknown {
   return v;
 }
 
+/** The prompt/index block — MCP servers + CLI tools — shared by `mux index` and the SessionStart hook. */
+export function renderIndex(cfg: { servers: Record<string, { note?: string; disabled?: boolean }>; tools: Record<string, { note?: string; disabled?: boolean }> }): string[] {
+  const out: string[] = [];
+  const servers = Object.entries(cfg.servers).filter(([, s]) => !s.disabled);
+  const tools = Object.entries(cfg.tools).filter(([, t]) => !t.disabled);
+  if (servers.length) {
+    out.push("MCP tools via `mux` CLI (list: mux tools <server>; call: mux call <server> <tool> key=value):");
+    for (const [name, s] of servers) out.push(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
+  }
+  if (tools.length) {
+    out.push("CLI tools via `mux` CLI (run: mux run <tool> [args…]):");
+    for (const [name, t] of tools) out.push(`  ${name.padEnd(12)} — ${t.note ?? "CLI tool"}`);
+  }
+  return out;
+}
+
 /** k=v pairs + optional --args JSON → tool arguments. JSON wins on key conflict. */
 export function parseArgs(pairs: string[], argsJson?: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
