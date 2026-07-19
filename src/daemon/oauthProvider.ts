@@ -1,15 +1,10 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
   OAuthClientInformation, OAuthClientInformationFull, OAuthClientMetadata, OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-
-function authDir(): string {
-  const base = process.env.MCPMUX_CONFIG ? dirname(process.env.MCPMUX_CONFIG) : join(homedir(), ".config", "mcpmux");
-  return join(base, "auth");
-}
+import { authDir } from "../shared/paths";
 
 type Persisted = {
   tokens?: OAuthTokens;

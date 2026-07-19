@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { configPath } from "./paths";
 import { read as readSecrets } from "./secrets";
 import { expandEnv, stripJsonc } from "./util";
+
+export { configPath } from "./paths"; // re-export so existing `from "./config"` imports keep working
 
 export type ServerCfg = {
   command?: string; args?: string[]; env?: Record<string, string>;
@@ -16,10 +17,6 @@ export type ToolCfg = {
   check?: string; setup?: string; note?: string; disabled?: boolean;
 };
 export type Config = { servers: Record<string, ServerCfg>; tools: Record<string, ToolCfg> };
-
-export function configPath(): string {
-  return process.env.MCPMUX_CONFIG ?? join(homedir(), ".config", "mcpmux", "servers.jsonc");
-}
 
 export function loadConfig(): Config {
   const p = configPath();

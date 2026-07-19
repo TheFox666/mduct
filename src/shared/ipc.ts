@@ -1,12 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { socketPath } from "./paths";
 
-export function socketPath(): string {
-  if (process.env.MCPMUX_SOCKET) return process.env.MCPMUX_SOCKET;
-  const run = process.env.XDG_RUNTIME_DIR;
-  return run ? join(run, "mcpmux.sock") : join(homedir(), ".cache", "mcpmux", "daemon.sock");
-}
+export { socketPath } from "./paths"; // re-export so existing `from "./ipc"` imports keep working
 
 export type Handler = (method: string, params: any) => Promise<unknown>;
 

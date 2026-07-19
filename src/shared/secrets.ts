@@ -1,10 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { secretsPath } from "./paths";
 
-export function secretsPath(): string {
-  return process.env.MCPMUX_SECRETS ?? join(homedir(), ".config", "mcpmux", "secrets.json");
-}
+export { secretsPath } from "./paths"; // re-export so existing `from "./secrets"` imports keep working
 
 export function read(): Record<string, string> {
   const p = secretsPath();
