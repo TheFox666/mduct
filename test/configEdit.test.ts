@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../src/shared/config";
-import { addServer, removeServer, setDisabled } from "../src/shared/configEdit";
+import { addServer, addTool, removeServer, setDisabled } from "../src/shared/configEdit";
 
 beforeEach(() => {
   process.env.MCPMUX_CONFIG = join(mkdtempSync(join(tmpdir(), "mux-")), "servers.jsonc");
@@ -36,6 +36,19 @@ describe("configEdit", () => {
     expect(loadConfig().servers.a!.disabled).toBe(true);
     setDisabled("a", false);
     expect(loadConfig().servers.a!.disabled).toBeUndefined();
+  });
+
+  test("config file is written 0600 — it can hold a plaintext credential (H1)", () => {
+    addServer("a", { command: "x", env: { WEIRD_CREDS: "sk-live-not-a-wordlist-key" } });
+    expect(statSync(process.env.MCPMUX_CONFIG!).mode & 0o777).toBe(0o600);
+  });
+
+  test("rejects a name with path traversal — the `mux import` untrusted-repo vector (M2)", () => {
+    expect(() => addServer("../../../tmp/evil", { command: "x" })).toThrow(/invalid name/);
+    expect(() => addServer("a/b", { command: "x" })).toThrow(/invalid name/);
+    expect(() => addTool("..", { run: "x" })).toThrow(/invalid name/);
+    addServer("boost-zepmaster", { command: "x" }); // legit names still pass
+    expect(loadConfig().servers["boost-zepmaster"]).toBeDefined();
   });
 
   test("env expansion stays a load-time concern: rewrite never bakes secrets", () => {

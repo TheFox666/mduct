@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { configPath, type Config, type ServerCfg, type ToolCfg } from "./config";
 import { setSecret } from "./secrets";
@@ -23,8 +23,20 @@ function save(cfg: Config): void {
   // atomic write: a crash mid-write must not corrupt the config (and the daemon watcher
   // must never read a half-written file) (#18)
   const tmp = `${p}.${process.pid}.tmp`;
-  writeFileSync(tmp, `// managed by mcpmux — edits survive, comments don't (rewritten on mux add/remove)\n${body}\n`);
+  // 0600: the config CAN hold a plaintext credential (a non-wordlist env key, a token in a URL, a
+  // hand-edited value that externalization didn't catch), so lock it down like the secret store —
+  // the 0700 dir alone doesn't help if it pre-existed 0755 (H1). mode on write + chmod belt.
+  writeFileSync(tmp, `// managed by mcpmux — edits survive, comments don't (rewritten on mux add/remove)\n${body}\n`, { mode: 0o600 });
   renameSync(tmp, p);
+  try { chmodSync(p, 0o600); } catch { /* best effort */ }
+}
+
+// Server/tool names become JSON keys AND filesystem paths (authDir/<name>.json, tmp files). Reject
+// anything that could escape the config dir — the realistic vector is `mux import` pulling a server
+// key verbatim from an untrusted repo's .mcp.json (M2). Legit names (hive, boost-zepmaster) pass.
+function validateName(name: string): void {
+  if (!name || name.length > 128 || name === "." || name === ".." || name.includes("..") || /[/\\\x00]/.test(name))
+    throw new Error(`invalid name "${name}" — no path separators, "..", or control characters`);
 }
 
 /** Set (or clear, with undefined) a per-instance default (`compact`, `warnAbove`). */
@@ -37,6 +49,7 @@ export function setDefault(key: "compact" | "warnAbove", value: boolean | number
 }
 
 export function addServer(name: string, server: ServerCfg, opts: { replace?: boolean } = {}): void {
+  validateName(name);
   const cfg = rawConfig();
   if (cfg.servers[name] && !opts.replace)
     throw new Error(`server "${name}" exists — use --replace to overwrite, or mux remove ${name} first`);
@@ -59,6 +72,7 @@ export function updateToolPin(name: string, pkg: string, oldVer: string, newVer:
 }
 
 export function addTool(name: string, tool: ToolCfg, opts: { replace?: boolean } = {}): void {
+  validateName(name);
   const cfg = rawConfig();
   if (cfg.tools[name] && !opts.replace)
     throw new Error(`tool "${name}" exists — use --replace to overwrite, or mux remove ${name} first`);

@@ -30,6 +30,8 @@ export function loadConfig(): Config {
   const exp = (v: string) => expandEnv(v, lookup);
   const servers: Record<string, ServerCfg> = {};
   for (const [name, s0] of Object.entries(raw.servers ?? {})) {
+    if (!s0 || typeof s0 !== "object" || Array.isArray(s0))
+      throw new Error(`server "${name}": entry must be an object — fix ${p}`); // else structuredClone(null) → TypeError (L4)
     const s: ServerCfg = structuredClone(s0);
     if (!s.command && !s.url)
       throw new Error(`server "${name}": needs "command" (stdio) or "url" (http) — fix ${p}`);

@@ -38,4 +38,9 @@ describe("loadConfig", () => {
   test("rejects server with neither command nor url, naming the server", () => {
     expect(() => withCfg(`{"servers":{"bad":{}}}`)).toThrow(/bad.*command.*url/);
   });
+
+  test("a null / non-object server entry gives a clear error, not a TypeError (L4)", () => {
+    expect(() => withCfg(`{"servers":{"foo":null}}`)).toThrow(/foo.*must be an object/);
+    expect(() => withCfg(`{"servers":{"foo":"just a string"}}`)).toThrow(/foo.*must be an object/);
+  });
 });
