@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { request, serveIpc } from "../src/ipc";
+import { request, serveIpc } from "../src/shared/ipc";
 
 test("round-trip and error propagation", async () => {
   const sock = join(mkdtempSync(join(tmpdir(), "mux-")), "d.sock");

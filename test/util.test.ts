@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { stripJsonc, expandEnv } from "../src/util";
+import { stripJsonc, expandEnv } from "../src/shared/util";
 
 describe("stripJsonc", () => {
   test("strips // and /* */ comments but not inside strings", () => {

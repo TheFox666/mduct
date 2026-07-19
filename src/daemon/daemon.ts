@@ -1,7 +1,7 @@
 import { existsSync, watch } from "node:fs";
-import { configPath, loadConfig, type Config } from "./config";
+import { configPath, loadConfig, type Config } from "../shared/config";
 import { ServerConnection } from "./connection";
-import { serveIpc, socketPath } from "./ipc";
+import { serveIpc, socketPath } from "../shared/ipc";
 
 const LOG_CAP = 500;
 

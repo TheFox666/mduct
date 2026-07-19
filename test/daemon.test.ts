@@ -2,8 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { request } from "../src/ipc";
-import { startDaemon } from "../src/daemon";
+import { request } from "../src/shared/ipc";
+import { startDaemon } from "../src/daemon/daemon";
 
 let stop: (() => Promise<void>) | null = null;
 afterEach(async () => { await stop?.(); stop = null; });

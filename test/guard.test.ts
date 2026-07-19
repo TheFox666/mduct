@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { guardAllows } from "../src/guard";
+import { guardAllows } from "../src/daemon/guard";
 
 describe("guardAllows", () => {
   test("no guard → allow", () => expect(guardAllows(undefined, "x")).toBe(true));

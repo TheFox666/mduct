@@ -1,7 +1,7 @@
 import { existsSync, rmSync } from "node:fs";
-import { configPath, loadConfig } from "./config";
-import { isTransportError, request, socketPath } from "./ipc";
-import { parseArgs, printResult } from "./cliFormat";
+import { configPath, loadConfig } from "./shared/config";
+import { isTransportError, request, socketPath } from "./shared/ipc";
+import { parseArgs, printResult } from "./cli/format";
 
 const HELP = `mcpmux — MCP multiplexer. Commands:
   mux call <server> <tool> [k=v ...] [--args '<json>'] [--timeout <s>] [--raw]
@@ -52,7 +52,7 @@ async function main(): Promise<number> {
   switch (cmd) {
     case "daemon": {
       if (boolFlag(argv, "--stop")) { await request(socketPath(), "shutdown", {}, 3000).catch(() => {}); return 0; }
-      const { startDaemon } = await import("./daemon");
+      const { startDaemon } = await import("./daemon/daemon");
       await startDaemon();
       await new Promise(() => {}); // run forever
       return 0;

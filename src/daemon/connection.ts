@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { ServerCfg } from "./config";
+import type { ServerCfg } from "../shared/config";
 import { guardAllows } from "./guard";
 
 export type ToolInfo = { name: string; description?: string; inputSchema?: unknown };

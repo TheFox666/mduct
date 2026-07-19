@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ServerConnection } from "../src/connection";
+import { ServerConnection } from "../src/daemon/connection";
 
 const fixtureCfg = { command: process.execPath, args: ["test/fixture-server.ts"] };
 
