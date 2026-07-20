@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # mcpmux installer: fetch the mux binary into ~/.local/bin, verifying its checksum.
 set -eu
-REPO="${MCPMUX_REPO:-OWNER/mcpmux}"      # set to the real GitHub slug at first release
+REPO="${MCPMUX_REPO:-TheFox666/mcpmux}"  # override with MCPMUX_REPO if you fork
 BIN_DIR="${MCPMUX_BIN_DIR:-$HOME/.local/bin}"
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"; [ "$ARCH" = "aarch64" ] && ARCH="arm64"; [ "$ARCH" = "x86_64" ] && ARCH="x64"
