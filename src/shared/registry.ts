@@ -28,11 +28,22 @@ export function refToName(ref: string): string {
   return ref.split("/").pop()!.replace(/[^a-z0-9-]/gi, "-");
 }
 
+const TIMEOUT_MS = 10_000;
+
 export async function searchRegistry(query: string): Promise<RegistryHit[]> {
   if (process.env.MCPMUX_DEBUG) console.error("[registry] GET", `${baseUrl()}/v0/servers?search=${encodeURIComponent(query)}&limit=30`);
-  const res = await fetch(`${baseUrl()}/v0/servers?search=${encodeURIComponent(query)}&limit=30`, {
-    signal: AbortSignal.timeout(15_000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl()}/v0/servers?search=${encodeURIComponent(query)}&limit=30`, {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (e) {
+    // AbortSignal.timeout throws a TimeoutError DOMException with a cryptic message;
+    // the registry is genuinely flaky for some queries. Give an actionable one.
+    if ((e as Error)?.name === "TimeoutError")
+      throw new Error(`registry timed out after ${TIMEOUT_MS / 1000}s — it's flaky for some terms, try again or a different query`);
+    throw e;
+  }
   if (!res.ok) throw new Error(`registry answered HTTP ${res.status} — is ${baseUrl()} reachable?`);
   const data = (await res.json()) as { servers?: RegistryEntry[] };
   // registry returns one entry per published version (oldest first), so the same ref
