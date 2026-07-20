@@ -10,6 +10,7 @@ const cfg: Config = {
 const hits: RegistryHit[] = [
   { ref: "com.gitlab/mcp", description: "GitLab official", entry: { name: "com.gitlab/mcp" } },
   { ref: "io.linear/mcp", description: "Linear", entry: { name: "io.linear/mcp" } },
+  { ref: "io.github.someone/slack", description: "community slack", entry: { name: "io.github.someone/slack", repository: { url: "https://github.com/someone/slack" } } as any },
 ];
 
 describe("pickerRows", () => {
@@ -26,6 +27,15 @@ describe("pickerRows", () => {
     expect(linear).toBeDefined();
     expect(linear!.installed).toBe(false);
     expect(linear!.ref).toBe("io.linear/mcp");
+  });
+
+  test("available rows carry the verified publisher and repo url", () => {
+    const rows = pickerRows(cfg, hits);
+    const gl = rows.find((r) => r.name === "com.gitlab/mcp")!;
+    expect(gl.pub).toEqual({ kind: "domain", who: "gitlab.com" });
+    const sl = rows.find((r) => r.name === "io.github.someone/slack")!;
+    expect(sl.pub).toEqual({ kind: "github", who: "github.com/someone" });
+    expect(sl.repo).toBe("https://github.com/someone/slack");
   });
 
   test("a registry hit whose ref suffix matches an installed server is not duplicated as available", () => {

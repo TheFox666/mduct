@@ -1,6 +1,6 @@
 import { loadConfig, type Config } from "../shared/config";
 import { addServer, removeServer } from "../shared/configEdit";
-import { refToName, searchRegistry, toServerCfg, type RegistryHit } from "../shared/registry";
+import { publisher, refToName, searchRegistry, toServerCfg, type RegistryHit } from "../shared/registry";
 
 export type PickerRow = {
   name: string;        // installed: the config name; available: the registry ref
@@ -8,6 +8,8 @@ export type PickerRow = {
   installed: boolean;
   ref?: string;        // set for available rows
   label: string;
+  pub?: { kind: "domain" | "github" | "other"; who: string }; // available rows: verified publisher
+  repo?: string;       // available rows: source repository URL
 };
 
 /** Pure: installed servers+tools first (marked), then registry hits not already installed. */
@@ -20,7 +22,10 @@ export function pickerRows(cfg: Config, hits: RegistryHit[]): PickerRow[] {
     rows.push({ name, kind: "tool", installed: true, label: `${name} — ${t.note ?? "CLI tool"}` });
   for (const h of hits) {
     if (installed.has(refToName(h.ref))) continue; // already installed under its default name
-    rows.push({ name: h.ref, kind: "server", installed: false, ref: h.ref, label: `${h.ref} — ${h.description}` });
+    rows.push({
+      name: h.ref, kind: "server", installed: false, ref: h.ref, label: `${h.ref} — ${h.description}`,
+      pub: publisher(h.ref), repo: (h.entry as { repository?: { url?: string } }).repository?.url,
+    });
   }
   return rows;
 }
@@ -65,13 +70,18 @@ export async function runPicker(): Promise<number> {
       const pointer = sel ? `${A.cyan}▸${A.reset}` : " ";
       const mark = r.installed ? `${A.green}✓${A.reset}` : `${A.cyan}+${A.reset}`;
       const label = sel ? `${A.bold}${r.label}${A.reset}` : r.installed ? r.label : `${A.dim}${r.label}${A.reset}`;
-      lines.push(`  ${pointer} ${mark} ${label}`);
+      // verified-publisher tag leads each candidate: domain (cyan) = proved domain ownership,
+      // github (gray) = proved that GitHub account. It's an identity, not a safety rating.
+      const tag = r.pub ? `${r.pub.kind === "domain" ? A.cyan : A.gray}⟨${r.pub.who}⟩${A.reset} ` : "";
+      lines.push(`  ${pointer} ${mark} ${tag}${label}`);
+      if (sel && r.repo) lines.push(`        ${A.gray}↳ ${r.repo}${A.reset}`);
     });
     lines.push("");
     if (mode === "search") {
       lines.push(`  ${A.cyan}search:${A.reset} ${query}${A.invBlue} ${A.reset}   ${A.dim}${searching ? "…searching" : "⏎ run · esc cancel"}${A.reset}`);
     } else {
       lines.push(`  ${A.gray}↑↓${A.reset} move   ${A.gray}⏎${A.reset} install/remove   ${A.gray}/${A.reset} search   ${A.gray}q${A.reset} quit`);
+      lines.push(`  ${A.dim}⟨${A.reset}${A.cyan}domain${A.reset}${A.dim}⟩ verified vendor · ⟨${A.reset}${A.gray}github.com/user${A.reset}${A.dim}⟩ an individual — check ↳ repo before installing (it runs their code)${A.reset}`);
     }
     if (flash) lines.push(`  ${A.yellow}${flash}${A.reset}`);
     out(A.clear + A.hideCur + lines.join("\n") + "\n");

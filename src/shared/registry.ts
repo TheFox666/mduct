@@ -31,6 +31,23 @@ export function refToName(ref: string): string {
   return ref.split("/").pop()!.replace(/[^a-z0-9-]/gi, "-");
 }
 
+/**
+ * Who published a ref, derived from its namespace. The registry ENFORCES namespace
+ * ownership (verified live 2026-07-20 against the official registry docs): domain
+ * namespaces (com.slack) require proving control of the domain via DNS TXT or an
+ * https://<domain>/.well-known/mcp-registry-auth key; io.github.<acct> requires
+ * GitHub OAuth as that account. So the namespace is a trustworthy identity of the
+ * publisher — NOT a safety rating: com.pulsemcp is verifiably pulsemcp.com, which
+ * is a third party, not Slack. The user still judges whether to trust that identity.
+ */
+export function publisher(ref: string): { kind: "domain" | "github" | "other"; who: string } {
+  const ns = ref.split("/")[0] ?? ref;
+  if (ns.startsWith("io.github.")) return { kind: "github", who: `github.com/${ns.slice("io.github.".length)}` };
+  const parts = ns.split(".");
+  if (parts.length >= 2) return { kind: "domain", who: parts.reverse().join(".") };
+  return { kind: "other", who: ns };
+}
+
 const TIMEOUT_MS = 10_000;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // registry listings change slowly; a day-old list is fine
 

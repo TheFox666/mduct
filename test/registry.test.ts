@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { searchRegistry, toServerCfg } from "../src/shared/registry";
+import { publisher, searchRegistry, toServerCfg } from "../src/shared/registry";
 
 // isolate the per-query cache so it starts empty and never touches ~/.cache.
 process.env.MCPMUX_CACHE = mkdtempSync(join(tmpdir(), "mcpmux-cache-"));
@@ -79,6 +79,14 @@ describe("searchRegistry", () => {
   test("rejects a package identifier that looks like a flag (#16 injection)", async () => {
     const hit = { ref: "x/y", description: "", entry: { name: "x/y", packages: [{ registryType: "npm", identifier: "-rf", version: "1.0.0" }] } };
     expect(() => toServerCfg(hit as any)).toThrow(/identifier/i);
+  });
+
+  test("publisher() reads the verified identity from the namespace", () => {
+    expect(publisher("io.github.jtalk22/slack-mcp-server")).toEqual({ kind: "github", who: "github.com/jtalk22" });
+    expect(publisher("io.github.CSOAI-ORG/slack-enterprise-mcp")).toEqual({ kind: "github", who: "github.com/CSOAI-ORG" });
+    expect(publisher("com.pulsemcp/slack")).toEqual({ kind: "domain", who: "pulsemcp.com" });
+    expect(publisher("ai.waystation/slack")).toEqual({ kind: "domain", who: "waystation.ai" });
+    expect(publisher("plainname")).toEqual({ kind: "other", who: "plainname" });
   });
 
   test("caches per query (case-normalized) — a repeat lookup skips the network", async () => {
