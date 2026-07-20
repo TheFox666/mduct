@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 /**
  * Instance path resolution. A named instance is selected with MCPMUX_PROFILE and lives under
  * ~/.config/mcpmux-<profile>/ (config, secrets, auth) with its own socket — mirroring Claude's
- * ~/.claude vs ~/.claude-agent-office. No profile → the default ~/.config/mcpmux/. Running a
+ * ~/.claude vs ~/.claude-<profile>. No profile → the default ~/.config/mcpmux/. Running a
  * second isolated daemon is thus ONE env var (MCPMUX_PROFILE=office), not three paths.
  *
  * The explicit MCPMUX_CONFIG / MCPMUX_SECRETS / MCPMUX_SOCKET overrides still win (used by tests

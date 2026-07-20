@@ -53,7 +53,7 @@ DAEMON & SETUP
 
 INSTANCES
   A named instance is one env var: MCPMUX_PROFILE=<name> → ~/.config/mcpmux-<name>/ with its own
-  config, secrets, auth and daemon socket (mirrors ~/.claude vs ~/.claude-agent-office).
+  config, secrets, auth and daemon socket (mirrors ~/.claude vs ~/.claude-<profile>).
   No profile → the default ~/.config/mcpmux/. \`mux status\` shows which instance answered.
 
 PIPING (keep big outputs OUT of your context — lossless)

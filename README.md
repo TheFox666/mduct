@@ -127,7 +127,7 @@ obvious which instance answered.
 ## Named instances
 
 Run several fully isolated muxes — each its own config, secrets, auth and daemon
-— with a single env var, mirroring Claude's `~/.claude` vs `~/.claude-agent-office`:
+— with a single env var, mirroring Claude's `~/.claude` vs `~/.claude-<profile>`:
 
 ```sh
 mux servers                           # default instance → ~/.config/mcpmux/
