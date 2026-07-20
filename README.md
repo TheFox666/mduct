@@ -4,6 +4,17 @@ One binary (`mux`) that multiplexes any number of MCP servers behind a plain
 CLI — agents and humans call MCP tools **without loading a single tool schema
 into model context**.
 
+What you get:
+
+- **Context stays tiny** — a ~80-token index in the prompt instead of every server's full tool schemas (a GitLab server alone is ~120 tools).
+- **Schemas on demand** — `mux tools <server>` lists tools with no schemas; `mux schema <server> <tool>` pulls one when you actually need it.
+- **Pipe-ready output** — `--json` strips prose so `| jq` just works, even on servers that wrap results in chatter; `--compact` minifies it.
+- **Warm daemon** — connections and OAuth sessions survive between calls, so stateful servers don't re-handshake every invocation.
+- **Guard in the daemon, not the prompt** — per-server `allow`/`deny` patterns the model can't talk its way around.
+- **Secrets stay out of config** — `${VAR}` refs resolve from a 0600 store; plaintext tokens never land in `servers.jsonc`.
+- **One interface for MCP *and* plain CLIs** — playwright, kubectl, aws show up in the same capability list, called the same way.
+- **Isolated instances** — one env var gives an agent its own config, secrets, auth and daemon.
+
 MCP tool schemas flood LLM context (a GitLab server alone ships ~120 tools).
 Lazy/deferred loading fixes the token bill but creates a worse failure mode:
 out of context = out of mind — agents forget the capability exists. mcpmux
