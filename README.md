@@ -13,12 +13,24 @@ survive between calls.
 
 ## Quickstart
 
-```sh
-# 1. install (or: bun run build && cp dist/mux ~/.local/bin/)
-curl -fsSL https://raw.githubusercontent.com/TheFox666/mcpmux/main/install.sh | sh
+**1. Install** — downloads the release binary, verifies its checksum, drops
+`mux` into `~/.local/bin`:
 
-# 2. configure servers — ~/.config/mcpmux/servers.jsonc
+```sh
+curl -fsSL https://raw.githubusercontent.com/TheFox666/mcpmux/main/install.sh | sh
 ```
+
+Make sure `~/.local/bin` is on your `PATH` (the installer warns if it isn't).
+From a source checkout instead: `bun run build && cp dist/mux ~/.local/bin/`.
+
+**2. Add a secret** — `${VAR}` refs resolve from a 0600 store, so tokens stay
+out of the config file (→ [Secrets](#secrets)):
+
+```sh
+echo "$YOUR_GITLAB_PAT" | mux secret set GITLAB_PAT
+```
+
+**3. Configure servers** — edit `~/.config/mcpmux/servers.jsonc`:
 
 ```jsonc
 {
@@ -35,14 +47,29 @@ curl -fsSL https://raw.githubusercontent.com/TheFox666/mcpmux/main/install.sh | 
 }
 ```
 
+Prefer not to hand-edit? `mux add` opens an interactive picker and `mux import`
+pulls servers out of existing Claude configs (→ [Import & registry](#import--registry)).
+
+**4. Use it** — the daemon autostarts on the first call and keeps connections warm:
+
 ```sh
-# 3. use it — the daemon autostarts and keeps connections warm
 mux call gitlab get_current_user
 mux call gitlab list_issues state=opened --timeout 30
-mux tools gitlab            # compact list, no schemas
+mux tools gitlab            # compact tool list, no schemas
 mux schema gitlab create_issue
-mux index                   # the prompt block for your agent
+mux status                  # resolved socket/config/secrets paths
 ```
+
+**5. Wire it into Claude** *(optional, only for Claude Code)* — a SessionStart
+hook injects the `mux index` prompt block and a PreToolUse hook redirects
+`mcp__*` calls through mux (→ [Claude hooks](#claude-hooks)):
+
+```sh
+mux hook install claude
+```
+
+Not using Claude? Paste `mux index` into your agent's system prompt yourself
+(→ [The prompt block](#the-prompt-block)).
 
 ## The prompt block
 
