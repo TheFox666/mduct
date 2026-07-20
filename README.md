@@ -35,6 +35,7 @@ echo "$YOUR_GITLAB_PAT" | mux secret set GITLAB_PAT
 ```jsonc
 {
   "servers": {
+    // local server — mux launches this process and talks to it over stdio
     "gitlab": {
       "command": "npx",
       "args": ["-y", "@yoda.digital/gitlab-mcp-server"],
@@ -42,9 +43,12 @@ echo "$YOUR_GITLAB_PAT" | mux secret set GITLAB_PAT
       "guard": { "deny": ["delete_*"] },
       "note": "GitLab: MRs, pipelines, issues, repos"
     },
-    "docs": { "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer ${DOCS_TOKEN}" } }
+    // remote server — mux talks to a hosted MCP endpoint over HTTP (nothing to install)
+    "my-remote": { "url": "https://mcp.example.com/mcp", "headers": { "Authorization": "Bearer ${REMOTE_TOKEN}" } }
   }
 }
+
+// each server is either `command`+`args` (local process) or `url` (remote HTTP) — the name is yours to pick
 ```
 
 Prefer not to hand-edit? `mux add` opens an interactive picker and `mux import`
