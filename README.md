@@ -15,12 +15,10 @@ What you get:
 - **One interface for MCP *and* plain CLIs** — playwright, kubectl, aws show up in the same capability list, called the same way.
 - **Isolated instances** — one env var gives an agent its own config, secrets, auth and daemon.
 
-MCP tool schemas flood LLM context (a GitLab server alone ships ~120 tools).
-Lazy/deferred loading fixes the token bill but creates a worse failure mode:
-out of context = out of mind — agents forget the capability exists. mcpmux
-keeps a ~80-token index in the prompt and everything else on demand, with a
-persistent daemon so stateful servers (OAuth sessions, connection reuse)
-survive between calls.
+Why not just lazy-load schemas? Deferred loading fixes the token bill but
+creates a worse failure mode: out of context = out of mind — the agent forgets
+the capability exists. The always-present index keeps the tool discoverable
+while its schema stays out of context until called.
 
 ## Quickstart
 
