@@ -10,6 +10,7 @@ type RegistryEntry = {
       environmentVariables?: { name: string; description?: string; isRequired?: boolean; isSecret?: boolean }[];
     }[];
   };
+  _meta?: { "io.modelcontextprotocol.registry/official"?: { isLatest?: boolean } };
 };
 
 export type RegistryHit = {
@@ -34,11 +35,20 @@ export async function searchRegistry(query: string): Promise<RegistryHit[]> {
   });
   if (!res.ok) throw new Error(`registry answered HTTP ${res.status} — is ${baseUrl()} reachable?`);
   const data = (await res.json()) as { servers?: RegistryEntry[] };
-  return (data.servers ?? []).map((e) => ({
-    ref: e.server.name,
-    description: e.server.description ?? "",
-    entry: e.server,
-  }));
+  // registry returns one entry per published version (oldest first), so the same ref
+  // shows up repeatedly — collapse to one hit per ref, keeping the version flagged
+  // isLatest (fall back to the newest seen, since the list is ascending).
+  const byRef = new Map<string, { hit: RegistryHit; latest: boolean }>();
+  for (const e of data.servers ?? []) {
+    const isLatest = !!e._meta?.["io.modelcontextprotocol.registry/official"]?.isLatest;
+    const cur = byRef.get(e.server.name);
+    if (!cur || isLatest || !cur.latest)
+      byRef.set(e.server.name, {
+        hit: { ref: e.server.name, description: e.server.description ?? "", entry: e.server },
+        latest: isLatest,
+      });
+  }
+  return [...byRef.values()].map((v) => v.hit);
 }
 
 /**

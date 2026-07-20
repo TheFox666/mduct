@@ -29,6 +29,13 @@ const fixture = Bun.serve({
           }],
         },
       },
+      // same ref published three times, ascending, isLatest on the last (real v0 ordering)
+      { server: { name: "io.dupe/multi", description: "old desc", version: "1.0.0" },
+        _meta: { "io.modelcontextprotocol.registry/official": { isLatest: false } } },
+      { server: { name: "io.dupe/multi", description: "mid desc", version: "1.5.0" },
+        _meta: { "io.modelcontextprotocol.registry/official": { isLatest: false } } },
+      { server: { name: "io.dupe/multi", description: "latest desc", version: "2.0.0" },
+        _meta: { "io.modelcontextprotocol.registry/official": { isLatest: true } } },
     ];
     const servers = all.filter((s) => s.server.name.includes(q) || s.server.description.includes(q));
     return Response.json({ servers, metadata: {} });
@@ -51,6 +58,13 @@ describe("searchRegistry", () => {
     expect(cfg).toMatchObject({ command: "npx", args: ["-y", "remote-filesystem-mcp-server@0.1.2"] });
     expect(requiredEnv).toEqual(["GCS_BUCKET"]);
     expect(cfg.env).toMatchObject({ GCS_BUCKET: "${GCS_BUCKET}" });
+  });
+
+  test("collapses repeated versions of a ref to one hit, keeping isLatest", async () => {
+    const hits = await searchRegistry("io.dupe/multi");
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({ ref: "io.dupe/multi", description: "latest desc" });
+    expect(hits[0]!.entry.version).toBe("2.0.0");
   });
 
   test("rejects a package identifier that looks like a flag (#16 injection)", async () => {
