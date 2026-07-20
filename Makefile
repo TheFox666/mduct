@@ -7,16 +7,17 @@ test: ## Testsuite
 build: ## Self-contained Binary nach dist/mux
 	$(BUN) run build
 
-install: build ## Binary nach ~/.local/bin (stoppt ALLE laufenden Daemons fürs Ersetzen)
-	-$(BIN_DIR)/mux daemon --stop 2>/dev/null
-	-pkill -f '$(BIN_DIR)/mux daemon' 2>/dev/null || true
-	@sleep 0.5
-	@for i in 1 2 3 4 5 6; do \
-		cp dist/mux $(BIN_DIR)/mux 2>/dev/null && break; \
-		sleep 0.5; \
-		[ $$i = 6 ] && { echo "binary busy — Daemons laufen noch? pkill -f '$(BIN_DIR)/mux daemon'"; exit 1; }; \
-	done
-	@echo "installed: $(BIN_DIR)/mux (daemons autostart on next call)"
+install: build ## Binary nach ~/.local/bin (stoppt den laufenden Daemon fürs Ersetzen)
+	@mkdir -p $(BIN_DIR)
+	@# graceful shutdown so the daemon frees the old inode; ignore if none runs.
+	@# NO pkill -f: it matches the make shell's own command line and kills us.
+	-$(BIN_DIR)/mux daemon --stop 2>/dev/null || true
+	@# atomic replace: rename swaps the dir entry, so a still-running process
+	@# keeps its old inode and we never hit ETXTBSY on the busy target.
+	cp dist/mux $(BIN_DIR)/mux.new
+	chmod +x $(BIN_DIR)/mux.new
+	mv -f $(BIN_DIR)/mux.new $(BIN_DIR)/mux
+	@echo "installed: $(BIN_DIR)/mux (daemon autostarts on next call)"
 
 clean: ## Build-Artefakte entfernen
 	rm -rf dist
