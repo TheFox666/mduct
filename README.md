@@ -183,7 +183,8 @@ mux daemon --install        # optional systemd user unit (warm daemon, Restart=o
 
 ## Not built yet
 
-npm (`npx mcpmux`) and Homebrew distribution channels — release chores; for now
-`bun run build` + the `install.sh` (GitHub-release binary + checksum) cover it.
+npm (`npx mcpmux`) and Homebrew distribution channels — the `install.sh`
+(GitHub-release binary + checksum) is the supported install route until then;
+`bun run build` builds from source.
 
 MIT.
