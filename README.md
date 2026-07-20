@@ -84,6 +84,31 @@ mux hook install claude
 Not using Claude? Paste `mux index` into your agent's system prompt yourself
 (→ [The prompt block](#the-prompt-block)).
 
+## The daemon
+
+Everything runs through a background daemon — it holds the live MCP connections
+and OAuth sessions so they survive between calls (a stdio server isn't
+re-spawned and a remote isn't re-handshaked on every `mux call`). It also
+enforces the guards, out of reach of the model.
+
+You never start it by hand. The first `mux call` spawns it, and it stays warm
+for subsequent calls; each instance ([profile](#named-instances)) gets its own.
+Managing it is rarely needed:
+
+```sh
+mux status              # is it up? which instance answered (socket/config/secrets)
+mux logs [server]       # recent daemon activity, optionally for one server
+mux daemon --stop       # stop it (the next call restarts it)
+mux daemon              # run in the foreground — use this to see why startup fails
+```
+
+By default the daemon lives only as long as it's used. For a daemon that starts
+at login and restarts on failure, install the optional systemd user unit:
+
+```sh
+mux daemon --install    # systemd user unit, Restart=on-failure
+```
+
 ## The prompt block
 
 `mux index` prints one line per server — put it in your system prompt or
@@ -214,12 +239,6 @@ mux doctor                  # overlap report: servers attached directly AND serv
 Bare `mux add` on a terminal opens a raw-mode picker — ↑↓/jk to move, `/` to
 search the registry, ⏎ to install a hit or remove an installed server, `q` to
 quit. Non-interactive (piped/agent) use passes explicit args instead.
-
-## Install
-
-```sh
-mux daemon --install        # optional systemd user unit (warm daemon, Restart=on-failure)
-```
 
 ## Not built yet
 
