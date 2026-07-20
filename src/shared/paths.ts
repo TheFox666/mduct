@@ -38,3 +38,10 @@ export function socketPath(): string {
   const run = process.env.XDG_RUNTIME_DIR ?? join(homedir(), ".cache", "mcpmux");
   return join(run, `mcpmux${profileSuffix()}.sock`);
 }
+
+/** Cache dir for the active instance: $MCPMUX_CACHE, else ~/.cache/mcpmux[-<profile>]. */
+export function cacheDir(): string {
+  if (process.env.MCPMUX_CACHE) return process.env.MCPMUX_CACHE;
+  const base = process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache");
+  return join(base, `mcpmux${profileSuffix()}`);
+}

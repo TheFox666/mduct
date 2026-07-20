@@ -1,11 +1,19 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, utimesSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { searchRegistry, toServerCfg } from "../src/shared/registry";
 
+// isolate the per-query cache so it starts empty and never touches ~/.cache.
+process.env.MCPMUX_CACHE = mkdtempSync(join(tmpdir(), "mcpmux-cache-"));
+
 // Fixture registry serving the real v0 shape (verified 2026-07-19 against
-// registry.modelcontextprotocol.io).
+// registry.modelcontextprotocol.io). Counts requests so tests can assert cache hits.
+let requests = 0;
 const fixture = Bun.serve({
   port: 0,
   fetch(req) {
+    requests++;
     const url = new URL(req.url);
     if (url.pathname !== "/v0/servers") return new Response("nf", { status: 404 });
     const q = url.searchParams.get("search") ?? "";
@@ -29,6 +37,7 @@ const fixture = Bun.serve({
           }],
         },
       },
+      { server: { name: "io.cachetest/srv", description: "cache probe" } },
       // same ref published three times, ascending, isLatest on the last (real v0 ordering)
       { server: { name: "io.dupe/multi", description: "old desc", version: "1.0.0" },
         _meta: { "io.modelcontextprotocol.registry/official": { isLatest: false } } },
@@ -70,5 +79,30 @@ describe("searchRegistry", () => {
   test("rejects a package identifier that looks like a flag (#16 injection)", async () => {
     const hit = { ref: "x/y", description: "", entry: { name: "x/y", packages: [{ registryType: "npm", identifier: "-rf", version: "1.0.0" }] } };
     expect(() => toServerCfg(hit as any)).toThrow(/identifier/i);
+  });
+
+  test("caches per query (case-normalized) — a repeat lookup skips the network", async () => {
+    const before = requests;
+    const first = await searchRegistry("cachetest");
+    expect(requests).toBe(before + 1); // hit the fixture once
+    expect(first[0]).toMatchObject({ ref: "io.cachetest/srv" });
+    const again = await searchRegistry("CacheTest"); // same key → served from fresh cache
+    expect(requests).toBe(before + 1); // no second network call
+    expect(again).toEqual(first);
+  });
+
+  test("serves a stale cache when the fetch fails, instead of erroring", async () => {
+    const good = await searchRegistry("cachetest"); // ensure cache is populated
+    const file = join(process.env.MCPMUX_CACHE!, "registry", "cachetest.json");
+    const old = new Date(Date.now() - 48 * 60 * 60 * 1000); // age past the 24h TTL
+    utimesSync(file, old, old);
+    const base = process.env.MCPMUX_REGISTRY;
+    process.env.MCPMUX_REGISTRY = "http://127.0.0.1:1"; // connection refused → fast failure
+    try {
+      const stale = await searchRegistry("cachetest");
+      expect(stale).toEqual(good); // last-known results, not a thrown error
+    } finally {
+      process.env.MCPMUX_REGISTRY = base;
+    }
   });
 });

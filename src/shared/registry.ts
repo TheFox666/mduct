@@ -1,4 +1,7 @@
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ServerCfg } from "./config";
+import { cacheDir } from "./paths";
 
 /** Shape per registry.modelcontextprotocol.io v0 (verified live 2026-07-19). */
 type RegistryEntry = {
@@ -29,28 +32,12 @@ export function refToName(ref: string): string {
 }
 
 const TIMEOUT_MS = 10_000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // registry listings change slowly; a day-old list is fine
 
-export async function searchRegistry(query: string): Promise<RegistryHit[]> {
-  if (process.env.MCPMUX_DEBUG) console.error("[registry] GET", `${baseUrl()}/v0/servers?search=${encodeURIComponent(query)}&limit=30`);
-  let res: Response;
-  try {
-    res = await fetch(`${baseUrl()}/v0/servers?search=${encodeURIComponent(query)}&limit=30`, {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch (e) {
-    // AbortSignal.timeout throws a TimeoutError DOMException with a cryptic message;
-    // the registry is genuinely flaky for some queries. Give an actionable one.
-    if ((e as Error)?.name === "TimeoutError")
-      throw new Error(`registry timed out after ${TIMEOUT_MS / 1000}s — it's flaky for some terms, try again or a different query`);
-    throw e;
-  }
-  if (!res.ok) throw new Error(`registry answered HTTP ${res.status} — is ${baseUrl()} reachable?`);
-  const data = (await res.json()) as { servers?: RegistryEntry[] };
-  // registry returns one entry per published version (oldest first), so the same ref
-  // shows up repeatedly — collapse to one hit per ref, keeping the version flagged
-  // isLatest (fall back to the newest seen, since the list is ascending).
+/** dedupe registry entries (one per version, ascending) to one hit per ref, keeping isLatest. */
+function dedupe(servers: RegistryEntry[]): RegistryHit[] {
   const byRef = new Map<string, { hit: RegistryHit; latest: boolean }>();
-  for (const e of data.servers ?? []) {
+  for (const e of servers) {
     const isLatest = !!e._meta?.["io.modelcontextprotocol.registry/official"]?.isLatest;
     const cur = byRef.get(e.server.name);
     if (!cur || isLatest || !cur.latest)
@@ -60,6 +47,47 @@ export async function searchRegistry(query: string): Promise<RegistryHit[]> {
       });
   }
   return [...byRef.values()].map((v) => v.hit);
+}
+
+function cacheFile(query: string): string {
+  // slack/Slack return identical data server-side, so normalize case → one shared entry.
+  const key = query.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "_all";
+  return join(cacheDir(), "registry", `${key}.json`);
+}
+
+function readCache(file: string): RegistryHit[] | null {
+  try { return JSON.parse(readFileSync(file, "utf8")) as RegistryHit[]; } catch { return null; }
+}
+
+/**
+ * Search the public MCP registry. Results are cached per query (24h) so repeated
+ * lookups skip the network — the registry rate-limits hard (a few requests, then
+ * it blackholes and hangs to the timeout). On a fetch failure we fall back to a
+ * stale cache if we have one: last-known results beat a timeout error.
+ */
+export async function searchRegistry(query: string): Promise<RegistryHit[]> {
+  const file = cacheFile(query);
+  const fresh = (() => { try { return Date.now() - statSync(file).mtimeMs < CACHE_TTL_MS; } catch { return false; } })();
+  if (fresh) { const c = readCache(file); if (c) return c; }
+
+  const url = `${baseUrl()}/v0/servers?search=${encodeURIComponent(query)}&limit=30`;
+  if (process.env.MCPMUX_DEBUG) console.error("[registry] GET", url);
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`registry answered HTTP ${res.status} — is ${baseUrl()} reachable?`);
+  } catch (e) {
+    const stale = readCache(file); // serve last-known results rather than fail on a flaky registry
+    if (stale) { if (process.env.MCPMUX_DEBUG) console.error("[registry] fetch failed, serving stale cache:", (e as Error).message); return stale; }
+    if ((e as Error)?.name === "TimeoutError")
+      throw new Error(`registry timed out after ${TIMEOUT_MS / 1000}s — it rate-limits, wait a moment and retry`);
+    throw e;
+  }
+
+  const data = (await res.json()) as { servers?: RegistryEntry[] };
+  const hits = dedupe(data.servers ?? []);
+  try { mkdirSync(join(cacheDir(), "registry"), { recursive: true }); writeFileSync(file, JSON.stringify(hits)); } catch { /* cache is best-effort */ }
+  return hits;
 }
 
 /**
