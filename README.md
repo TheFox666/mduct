@@ -15,7 +15,7 @@ survive between calls.
 
 ```sh
 # 1. install (or: bun run build && cp dist/mux ~/.local/bin/)
-curl -fsSL https://raw.githubusercontent.com/OWNER/mcpmux/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/TheFox666/mcpmux/main/install.sh | sh
 
 # 2. configure servers — ~/.config/mcpmux/servers.jsonc
 ```
