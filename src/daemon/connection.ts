@@ -1,9 +1,28 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ServerCfg } from "../shared/config";
 import { guardAllows } from "./guard";
 import { FileOAuthProvider } from "./oauthProvider";
+
+/**
+ * A child MCP server inherits the daemon's cwd unless told otherwise. The daemon is lazily
+ * autostarted by the first `mux` call, so its cwd is that caller's dir — for an agent-office
+ * turn, an ephemeral per-task git worktree. Once the worktree is torn down, inheriting that
+ * dead path makes posix_spawn fail with ENOENT for every fresh server, fleet-wide. So: keep
+ * inheriting while the cwd is alive (relative-path server commands still resolve as before),
+ * and only fall back to a guaranteed-live dir when it's gone. `process.cwd()` itself throws
+ * once the dir is deleted — that's the clearest "it's dead" signal.
+ */
+function childSpawnCwd(): string | undefined {
+  try {
+    return existsSync(process.cwd()) ? undefined : homedir();
+  } catch {
+    return homedir();
+  }
+}
 
 export type ToolInfo = { name: string; description?: string; inputSchema?: unknown };
 export type CallResult = { content: unknown[]; isError?: boolean };
@@ -63,6 +82,8 @@ export class ServerConnection {
             command: this.cfg.command,
             args: this.cfg.args ?? [],
             env: { ...process.env, ...this.cfg.env } as Record<string, string>,
+            // inherit the (live) cwd, or fall back to homedir() when it's a torn-down worktree
+            ...((): { cwd?: string } => { const cwd = childSpawnCwd(); return cwd ? { cwd } : {}; })(),
           })
         : new StreamableHTTPClientTransport(new URL(this.cfg.url!), {
             requestInit: { headers: this.cfg.headers },
