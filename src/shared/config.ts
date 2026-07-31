@@ -5,10 +5,23 @@ import { expandEnv, stripJsonc } from "./util";
 
 export { configPath } from "./paths"; // re-export so existing `from "./config"` imports keep working
 
+/**
+ * "This call could have been mine." The server declares which other tool calls it shadows and what
+ * to say instead; mux only matches and quotes. `pathIn` narrows to where the server is useful
+ * (an index only shadows greps into repos it has indexed).
+ */
+export type ShadowRule = {
+  tool?: string[]; bash?: string; pathIn?: string[]; hint: string;
+  /** Bucket capacity — how many hints may land back to back. Default 1. */
+  budget?: number;
+  /** Minutes to refill one hint. 0 (default) never refills: one bucket per session, as before. */
+  refillMin?: number;
+};
 export type ServerCfg = {
   command?: string; args?: string[]; env?: Record<string, string>;
   url?: string; headers?: Record<string, string>; auth?: "oauth";
   guard?: { allow?: string[]; deny?: string[] };
+  shadow?: ShadowRule[];
   idleTtlMin?: number; note?: string; disabled?: boolean;
 };
 /** A CLI capability (playwright, kubectl, aws): invoked via `mux run <name>` with its env/wrapping. */

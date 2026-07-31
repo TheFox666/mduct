@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { discoverClaudeSources } from "../shared/claudeConfigs";
 import { loadConfig } from "../shared/config";
 import { renderIndex } from "./format";
+import { available, findHit, muxCallServer, readEvents, record, shadowMatcher } from "./shadow";
 
 /**
  * Hook handlers ARE mux subcommands — no script files to install or drift.
@@ -24,6 +25,11 @@ export function hookRunSessionStart(): number {
     return 0;
   }
   for (const line of renderIndex(cfg)) console.log(line);
+  // Shadow rules only fire if the installed PreToolUse matcher covers their tools. Editing the
+  // config can't reach settings.json, so the drift is checked HERE instead of being a silent no-op.
+  const needed = shadowMatcher(cfg);
+  if (needed && !installedMatcherCovers(needed))
+    console.log(`⚠ mcpmux: Shadow-Regeln deklariert, aber der PreToolUse-Matcher deckt sie nicht (${needed}) — \`mux hook install claude\` einmal neu laufen lassen.`);
   // migration nudge: direct-attached servers that mux already serves
   const muxNames = new Set(Object.keys(cfg.servers).filter((n) => !cfg.servers[n]!.disabled));
   const home = process.env.MCPMUX_HOME;
@@ -38,12 +44,20 @@ export function hookRunSessionStart(): number {
   return 0;
 }
 
+type PreToolUseInput = {
+  tool_name?: string;
+  tool_input?: { command?: string };
+  cwd?: string;
+  session_id?: string;
+};
+
 export async function hookRunPreToolUse(): Promise<number> {
   const input = await new Response(Bun.stdin.stream()).text();
-  let toolName = "";
-  try { toolName = (JSON.parse(input) as { tool_name?: string }).tool_name ?? ""; } catch { return 0; }
+  let ev: PreToolUseInput = {};
+  try { ev = JSON.parse(input) as PreToolUseInput; } catch { return 0; }
+  const toolName = ev.tool_name ?? "";
   // mcp__<server>__<tool>: split at the first "__" after the mcp__ prefix (N8)
-  if (!toolName.startsWith("mcp__")) return 0;
+  if (!toolName.startsWith("mcp__")) return shadowBranch(ev, toolName);
   const rest = toolName.slice(5);
   const sep = rest.indexOf("__");
   if (sep < 1) return 0;
@@ -58,6 +72,58 @@ export async function hookRunPreToolUse(): Promise<number> {
       permissionDecisionReason:
         `Dieser MCP-Server läuft über mcpmux. Nutze stattdessen: mux call ${server} ${tool} key=value … ` +
         `(Schema: mux schema ${server} ${tool}; Tools: mux tools ${server})`,
+    },
+  }));
+  return 0;
+}
+
+/** Does the installed hook entry already listen for these tools? Unreadable settings → assume yes (stay quiet). */
+function installedMatcherCovers(needed: string): boolean {
+  const p = process.env.MCPMUX_CLAUDE_SETTINGS ?? join(homedir(), ".claude", "settings.json");
+  let entries: HookEntry[];
+  try { entries = (JSON.parse(readFileSync(p, "utf8")) as Settings).hooks?.PreToolUse ?? []; } catch { return true; }
+  const ours = entries.filter((e) => (e.hooks ?? []).some((h) => h.command.endsWith("hook run pre-tool-use")));
+  if (!ours.length) return true; // hook not installed at all — that's a different problem, not this warning's
+  return needed.split("|").every((tool) => ours.some((e) => (e.matcher ?? "").split("|").includes(tool)));
+}
+
+/**
+ * The other half of PreToolUse: a call mux did NOT get, but a configured server could have served.
+ * A token bucket decides how often it may say so — a redirect, never a ban, and grep works on the
+ * retry. Every fire is logged, and so is every later `mux call`, because "does the redirect convert"
+ * is a question only the log can answer.
+ */
+function shadowBranch(ev: PreToolUseInput, toolName: string): number {
+  const command = ev.tool_input?.command ?? "";
+  const session = ev.session_id ?? "unknown";
+  let cfg;
+  try { cfg = loadConfig(); } catch { return 0; }
+
+  // conversion signal: the agent reached for a mux server on its own (or after a nudge)
+  const used = muxCallServer(command);
+  if (used && cfg.servers[used]) {
+    record({ ts: new Date().toISOString(), session, kind: "use", server: used });
+    return 0;
+  }
+
+  const hit = findHit(cfg, toolName, command, ev.cwd ?? "");
+  if (!hit) return 0;
+  // bucket empty → stay out of the way until it refills
+  const tokens = available(readEvents(), session, hit.server, hit.rule, hit.budget, hit.refillMin, Date.now());
+  if (tokens < 1) return 0;
+  record({ ts: new Date().toISOString(), session, kind: "nudge", server: hit.server, rule: hit.rule, tool: toolName });
+  const left = tokens - 1;
+  const bucket = hit.refillMin
+    ? `${left}/${hit.budget} Hinweise übrig, +1 alle ${hit.refillMin} min`
+    : `${left}/${hit.budget} Hinweise übrig in dieser Session`;
+  console.log(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason:
+        `${hit.hint}\n\n` +
+        `(mcpmux-Hinweis zu "${hit.server}" — ${bucket}. ${toolName} ist nicht gesperrt: war es hier ` +
+        `das richtige Werkzeug, ruf es einfach nochmal auf.)`,
     },
   }));
   return 0;
@@ -92,7 +158,14 @@ export function hookInstall(argv: string[]): number {
 
   if (!remove) {
     hooks.SessionStart.push({ hooks: [{ type: "command", command: `${selfBin()} hook run session-start` }] });
-    hooks.PreToolUse.push({ matcher: "mcp__.*", hooks: [{ type: "command", command: `${selfBin()} hook run pre-tool-use` }] });
+    // Shadowed tool names come from the config, so the matcher stays as narrow as the rules require —
+    // no config declaring shadows means no extra process per Bash/Grep call, exactly as before.
+    let matcher = "mcp__.*";
+    try {
+      const extra = shadowMatcher(loadConfig());
+      if (extra) matcher = `mcp__.*|${extra}`;
+    } catch { /* broken config: install the base hook rather than nothing */ }
+    hooks.PreToolUse.push({ matcher, hooks: [{ type: "command", command: `${selfBin()} hook run pre-tool-use` }] });
   }
   const tmp = `${settingsPath}.${process.pid}.tmp`; // atomic: never corrupt Claude settings (#18)
   writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n");

@@ -225,6 +225,48 @@ stored token automatically. A dead session fails with `run: mux auth <server>`.
 mux hook install claude     # SessionStart injects `mux index`; PreToolUse redirects mcp__* calls
 ```
 
+## Shadowing — "this call could have been mine"
+
+A session-start index is read once and then loses against habit. Measured on a
+real two-day session: 21 calls to an indexed-code server against 270 greps into
+the very repos it had indexed, with the index block in context the whole time.
+
+So a server may declare which *other* tool calls it shadows, and mux says so at
+the moment of the call — once per session, then it gets out of the way:
+
+```jsonc
+"hive": {
+  "command": "…",
+  "shadow": [{
+    "tool": ["Grep", "Glob"],                       // tool names, matched exactly
+    "bash": "\\b(grep|rg|ugrep)\\b",                // regex against a Bash command
+    "pathIn": ["~/dev/zepnext", "~/dev/zepmaster"], // gate: only where this server is useful
+    "hint": "This repo is indexed — try `mux call hive search_code query=…` first.",
+    "budget": 2,                                    // bucket capacity (default 1)
+    "refillMin": 30                                 // one hint back every 30 min (0 = never)
+  }]
+}
+```
+
+A token bucket, not a per-session counter — because a session is a bad unit of
+time: a real one here ran two days and 816 tool calls, and a single hint at call
+5 is an accident, not a lesson. `budget` allows a short burst, `refillMin` brings
+hints back while the session keeps running. `refillMin: 0` is the plain fixed
+budget and stays the default.
+
+A redirect, not a ban: with the bucket empty the rule is silent, and re-running
+the same grep simply works — the message says so. mux knows
+nothing about what a server does — it matches the declared patterns and quotes
+the server's own `hint`. No `shadow` block anywhere means no extra process per
+Bash call, because `hook install` derives the PreToolUse matcher from the config
+(and session start warns when the installed matcher no longer covers the rules).
+
+Whether the redirect earns its friction is a measurement, not an opinion:
+
+```sh
+mux shadow      # nudges vs follow-up calls to that server, per server
+```
+
 ## Import & registry
 
 ```sh
