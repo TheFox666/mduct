@@ -239,7 +239,7 @@ the moment of the call — once per session, then it gets out of the way:
   "command": "…",
   "shadow": [{
     "tool": ["Grep", "Glob"],                       // tool names, matched exactly
-    "bash": "\\b(grep|rg|ugrep)\\b",                // regex against a Bash command
+    "bash": "(?:^|[\\n;]|&&)\\s*(grep|rg|ugrep)\\b", // regex against a Bash command
     "pathIn": ["~/dev/zepnext", "~/dev/zepmaster"], // gate: only where this server is useful
     "hint": "This repo is indexed — try `mux call hive search_code query=…` first.",
     "budget": 2,                                    // bucket capacity (default 1)
@@ -253,6 +253,11 @@ time: a real one here ran two days and 816 tool calls, and a single hint at call
 5 is an accident, not a lesson. `budget` allows a short burst, `refillMin` brings
 hints back while the session keeps running. `refillMin: 0` is the plain fixed
 budget and stays the default.
+
+Anchor the regex to a command start (`^`, `;`, `&&`) rather than matching the bare word:
+`ps aux | grep x` filters output, it does not search a repo, and a rule that fires on it is
+pure friction. Measured over one session's 837 Bash calls: 340 naive matches against 255 real
+searches — a third of them noise.
 
 A redirect, not a ban: with the bucket empty the rule is silent, and re-running
 the same grep simply works — the message says so. mux knows
