@@ -6,7 +6,7 @@ import { join } from "node:path";
 const dir = mkdtempSync(join(tmpdir(), "mduct-"));
 const settings = join(dir, "settings.json");
 writeFileSync(settings, JSON.stringify({ model: "opus" })); // pre-existing user settings survive
-const env = { ...process.env, MDUCT_CONFIG: join(dir, "servers.jsonc") };
+const env = { ...process.env, MDUCT_CONFIG: join(dir, "servers.jsonc"), MDUCT_CLAUDE_MCP_CONFIG: join(dir, ".claude.json") };
 writeFileSync(env.MDUCT_CONFIG!, JSON.stringify({
   servers: { fix: { command: process.execPath, args: ["test/fixture-server.ts"], note: "fixture" } },
 }));
@@ -96,9 +96,22 @@ describe("hook install also registers the MCP catalogue", () => {
     expect(JSON.parse(readFileSync(claudeJson, "utf8")).mcpServers.other).toBeDefined();
   }, 30_000);
 
-  test("no server opted in → nothing is registered at all", async () => {
+  test("no server opted in → nothing is registered", async () => {
+    writeFileSync(claudeJson, JSON.stringify({ mcpServers: {} }));
     write(false);
     await install();
+    expect(registered()).toBeUndefined();
+  }, 30_000);
+
+  test("an install from a config WITHOUT a catalogue leaves an existing registration alone", async () => {
+    // the bug this pins: the test suite ran `hook install` against temp configs and silently
+    // unregistered the real catalogue, because "no catalogue here" was read as "remove it"
+    writeFileSync(claudeJson, JSON.stringify({ mcpServers: { mduct: { command: "/somewhere/mduct", args: ["mcp"] } } }));
+    write(false);
+    await install();
+    expect(registered()).toBeDefined();
+    // ...and --remove is still the way to actually get rid of it
+    await install("--remove");
     expect(registered()).toBeUndefined();
   }, 30_000);
 });

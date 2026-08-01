@@ -56,9 +56,14 @@ function syncMcpRegistration(remove: boolean): string | null {
     catch { return `⚠ ${p} is not readable JSON — register manually: claude mcp add mduct -- mduct mcp`; }
   }
   const had = !!j.mcpServers?.mduct;
-  if (remove || !catalogueWanted()) {
+  // Only --remove deletes. Removing it merely because THIS config declares no catalogue would tear
+  // out a registration that another config (another profile, a test, a one-off MDUCT_CONFIG) put
+  // there — which is exactly what happened: the test suite quietly unregistered the real one.
+  if (remove) {
     if (!had) return null;
     delete j.mcpServers!.mduct;
+  } else if (!catalogueWanted()) {
+    return null; // nothing to add, nothing of ours to take away
   } else {
     const { command, args } = selfExec(["mcp"]);
     j.mcpServers = { ...(j.mcpServers ?? {}), mduct: { type: "stdio", command, args, env: {} } };
@@ -66,9 +71,7 @@ function syncMcpRegistration(remove: boolean): string | null {
   const tmp = `${p}.${process.pid}.tmp`; // atomic: never corrupt Claude's own config
   writeFileSync(tmp, JSON.stringify(j, null, 2) + "\n");
   renameSync(tmp, p);
-  return remove || !catalogueWanted()
-    ? `removed the mduct MCP catalogue from ${p}`
-    : `registered the mduct MCP catalogue in ${p}`;
+  return remove ? `removed the mduct MCP catalogue from ${p}` : `registered the mduct MCP catalogue in ${p}`;
 }
 
 export function hookRunSessionStart(): number {
