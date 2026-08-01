@@ -18,11 +18,31 @@ Measured on one GitLab server: 186 tools, about 168 kB of JSON Schema, roughly
 40k tokens spent before the model has read your question. You pay it again on
 every context refresh, mostly for tools nobody calls.
 
-mduct puts one line per server in the prompt, about 20 tokens each, and leaves
-the schemas on disk until something calls a tool. That is the whole trick.
+mduct puts a few lines per server in the prompt and leaves the schemas on disk
+until something calls a tool:
 
-Loading them lazily would fix the token bill and introduce a worse problem: out
-of context, out of mind. An agent will not use a capability it cannot see.
+```
+MCP tools via `mduct` CLI (list+args: mduct tools <server>; call: mduct call <server> <tool> key=value):
+  notes        — shared notes
+      search(query, limit?)  get(id)  put(id, body)
+  gitlab       — GitLab: MRs, pipelines, issues, repos
+      189 tools — mduct tools gitlab
+CLI tools via `mduct` CLI (what it can do: mduct tools <tool>; run: mduct run <tool> [args…]):
+  kubectl      — read-only cluster access
+```
+
+A server small enough to carry its signatures brings them along, so an agent can
+see the call instead of remembering to ask for it. A 189-tool server collapses to
+a count and a pointer, because 16 kB of names in every context is the thing this
+exists to prevent. Measured on a real seven-server setup: 2.9 kB in total.
+
+The signatures come from a cache the daemon fills as a side effect of use, so the
+index never connects and works cold in a session hook. `mduct index --refresh`
+fills it on purpose; `indexTools` per server overrides the threshold either way.
+
+Loading schemas lazily instead would fix the token bill and introduce a worse
+problem: out of context, out of mind. An agent will not use a capability it
+cannot see, and this is the whole reason the index exists at all.
 
 ## Install
 
@@ -159,6 +179,19 @@ mduct tool status                        # installed / missing, + update hints f
 `mduct tools <name>` answers for both kinds. For an MCP server it lists tool
 signatures; for a CLI tool it runs that tool's help. Otherwise the only way to
 discover a CLI tool's surface is to already know it.
+
+A CLI is not always enough — sometimes a script needs the library behind it.
+Declare it, and mduct keeps a pinned copy and hands you the environment:
+
+```jsonc
+"playwright": { "run": "bunx", "args": ["playwright@1.61.1"], "lib": "playwright@1.61.1" }
+```
+
+```sh
+mduct tool setup playwright      # installs the library into the instance cache
+eval "$(mduct env playwright)"   # NODE_PATH, plus whatever env the tool declares
+node screenshot.js               # require("playwright") resolves, at the pinned version
+```
 
 Every field with its default: [Configuration](../../wiki/Configuration).
 
