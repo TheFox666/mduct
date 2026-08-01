@@ -76,6 +76,20 @@ gh release create v0.5.0 --title "v0.5.0 — <same one-liner>" --notes-file note
   dist/mduct-darwin-x64{,.sha256} dist/mduct-darwin-arm64{,.sha256}
 ```
 
+## Homebrew tap
+
+The formula points at release assets, so it can only be regenerated once the
+release exists — after `gh release create`, never before:
+
+```sh
+bun run formula                    # reads the published .sha256 files, writes ~/dev/homebrew-tap
+cd ~/dev/homebrew-tap && git commit -am "mduct 0.5.1" && git push
+```
+
+It fetches the checksums from GitHub rather than from `dist/`, so a formula can
+never describe a build that was not published. Forgetting this step leaves
+`brew install thefox666/tap/mduct` on the previous version, silently.
+
 ## Verify the published artefact, not the local one
 
 A green suite says the code is right; it says nothing about what people download.
@@ -109,3 +123,8 @@ day to day, wrong when you want to be sure the release works.
   `git@github.com:TheFox666/mduct.wiki.git`).
 - README updated if a flag, command or config field changed.
 - Working tree clean, so the tag points at what you built.
+
+## After publishing
+
+- `bun run formula`, then commit and push the tap.
+- Install the published binary over the local one, so what you run is what users get.

@@ -6,7 +6,8 @@
   "scripts": {
     "test": "bun test",
     "build": "bun build --compile --outfile dist/mduct src/main.ts",
-    "release": "bun build --compile --target=bun-linux-x64 --outfile dist/mduct-linux-x64 src/main.ts && bun build --compile --target=bun-linux-arm64 --outfile dist/mduct-linux-arm64 src/main.ts && bun build --compile --target=bun-darwin-x64 --outfile dist/mduct-darwin-x64 src/main.ts && bun build --compile --target=bun-darwin-arm64 --outfile dist/mduct-darwin-arm64 src/main.ts"
+    "release": "bun build --compile --target=bun-linux-x64 --outfile dist/mduct-linux-x64 src/main.ts && bun build --compile --target=bun-linux-arm64 --outfile dist/mduct-linux-arm64 src/main.ts && bun build --compile --target=bun-darwin-x64 --outfile dist/mduct-darwin-x64 src/main.ts && bun build --compile --target=bun-darwin-arm64 --outfile dist/mduct-darwin-arm64 src/main.ts",
+    "formula": "bun scripts/formula.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
