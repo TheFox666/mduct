@@ -21,6 +21,7 @@ CALL & RUN
   tools <server>                       list a server's tools (compact — no schemas)
   schema <server> <tool>               full JSON schema of one tool
   index [--refresh]                    the compact capability block (for prompts / hooks)
+  mcp                                  serve the tool CATALOGUE over MCP (names only; calls stay in the shell)
 
 SERVERS
   servers                              configured MCP servers + connection state
@@ -307,6 +308,10 @@ async function main(): Promise<number> {
       return cmdSetDisabled(argv[0], cmd === "disable");
     }
     case "logs": console.log(((await daemonRequest("logs", { server: argv[0] })) as string[]).join("\n")); return 0;
+    case "mcp": {
+      const { runCatalogServer } = await import("./cli/mcpCatalog");
+      return await runCatalogServer();
+    }
     case "env": {
       const { cmdToolEnv } = await import("./cli/tool");
       return cmdToolEnv(argv[0]);

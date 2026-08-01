@@ -209,7 +209,7 @@ function coerce(v: string): unknown {
 const INDEX_TOOL_LIMIT = 25;
 
 export function renderIndex(cfg: {
-  servers: Record<string, { note?: string; disabled?: boolean; indexTools?: boolean }>;
+  servers: Record<string, { note?: string; disabled?: boolean; indexTools?: boolean; mcpCatalog?: boolean }>;
   tools: Record<string, { note?: string; disabled?: boolean }>;
 }): string[] {
   const out: string[] = [];
@@ -221,6 +221,9 @@ export function renderIndex(cfg: {
       out.push(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
       const cached = readToolCache(name);
       if (!cached?.length) continue;
+      // already mirrored into the tool namespace by `mduct mcp` — printing the signatures here too
+      // pays for the same information twice
+      if (s.mcpCatalog) { out.push(`      ${cached.length} tools — in the mduct MCP catalogue`); continue; }
       const show = s.indexTools ?? cached.length <= INDEX_TOOL_LIMIT;
       if (show) out.push(`      ${cached.map((t) => t.name + t.sig).join("  ")}`);
       else out.push(`      ${cached.length} tools — mduct tools ${name}`);

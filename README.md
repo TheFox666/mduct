@@ -231,6 +231,38 @@ Measured with a 300 ms tool, five calls at once: 1561 ms serialised, 360 ms with
 `maxConcurrent: 5`. Start at 3 or 4 rather than a big number, and watch the
 server's own rate limit rather than mduct's.
 
+## The tool namespace
+
+The prompt block is prose, and prose competes with habit. Tool *selection*
+happens in the namespace, and nothing written into a prompt lands there.
+
+`mduct mcp` is a second face for exactly that: an MCP server whose `tools/list`
+mirrors the real tools, so their names sit where an agent looks. It does not
+execute. Each entry's description is the shell command to run:
+
+```
+hive__find_symbol   $ mduct call hive find_symbol name=… repo=… — where a symbol is defined
+```
+
+Calls stay in the shell, because the shell is the part worth keeping: `--json |
+jq`, redirection, loops. Running results back through MCP would hand every
+payload straight into the context.
+
+```sh
+claude mcp add mduct -- mduct mcp     # register the catalogue
+```
+
+```jsonc
+"hive": { "command": "…", "mcpCatalog": true }   // opt in, per server
+```
+
+Opt-in matters: a catalogue entry costs roughly six times the prose line for the
+same tool. Measured on one setup — hive's 15 tools are 2.5 kB as a catalogue
+against 0.75 kB as signatures in the index; GitLab's 189 would be 29 kB. Mirror
+the one or two servers an agent keeps walking past, not everything. A server in
+the catalogue drops its signatures from the prompt block, so you never pay for
+both.
+
 ## Shadowing
 
 A server can declare which *other* tool calls it could have served, and mduct

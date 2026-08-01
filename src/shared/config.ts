@@ -26,6 +26,9 @@ export type ServerCfg = {
   maxConcurrent?: number;
   /** Force tool signatures in/out of the index block. Default: in, when the server has few enough. */
   indexTools?: boolean;
+  /** Mirror this server's tools into the `mduct mcp` catalogue, so their names sit in the agent's
+   *  tool namespace. Off by default — a 189-tool server there is the flood mduct exists to stop. */
+  mcpCatalog?: boolean;
   idleTtlMin?: number; note?: string; disabled?: boolean;
 };
 /** A CLI capability (playwright, kubectl, aws): invoked via `mduct run <name>` with its env/wrapping. */

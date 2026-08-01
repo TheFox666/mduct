@@ -65,3 +65,16 @@ describe("tool cache is namespaced by config, not just by server name", () => {
     expect(readToolCache("gitlab")).toEqual([{ name: "list_issues", sig: "(project)" }]);
   });
 });
+
+describe("a catalogued server is not printed twice", () => {
+  test("mcpCatalog replaces the signature line with a pointer, keeping the summary", () => {
+    const cache = mkdtempSync(join(tmpdir(), "mduct-dup-"));
+    process.env.MDUCT_CACHE = cache;
+    process.env.MDUCT_CONFIG = join(cache, "servers.jsonc");
+    writeToolCache("kb", [{ name: "a", sig: "(x)" }, { name: "b", sig: "" }]);
+    const out = renderIndex({ servers: { kb: { note: "n", mcpCatalog: true } }, tools: {} } as never).join("\n");
+    expect(out).toContain("kb");
+    expect(out).toContain("2 tools — in the mduct MCP catalogue");
+    expect(out).not.toContain("a(x)");
+  });
+});

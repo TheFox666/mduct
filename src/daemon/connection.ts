@@ -142,7 +142,11 @@ export class ServerConnection {
     const res = await client.listTools();
     this.tools = res.tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
     // hand the index something to show without connecting — names and signatures only
-    writeToolCache(this.name, this.tools.map((t) => ({ name: t.name, sig: toolSignature(t.inputSchema) })));
+    writeToolCache(this.name, this.tools.map((t) => ({
+      name: t.name,
+      sig: toolSignature(t.inputSchema),
+      desc: (t.description ?? "").split("\n")[0]!.slice(0, 110),
+    })));
     return this.tools;
   }
 

@@ -15,7 +15,9 @@ import { cacheDir, configPath } from "./paths";
  * the cache and never connects. A server that has not been called yet simply shows its summary
  * line until it has, or until `mduct index --refresh` fills it in.
  */
-export type CachedTool = { name: string; sig: string };
+/** `desc` is the first line of the server's description, capped — enough for a catalogue entry,
+ *  nowhere near the schema it came from. */
+export type CachedTool = { name: string; sig: string; desc?: string };
 
 /**
  * Namespaced by the CONFIG the entries came from, not just by the instance.
