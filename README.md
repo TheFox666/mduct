@@ -1,11 +1,11 @@
 [![ci](https://github.com/TheFox666/mduct/actions/workflows/ci.yml/badge.svg)](https://github.com/TheFox666/mduct/actions/workflows/ci.yml)
 
-<p align="center"><img src="docs/banner.png" alt="mduct — because it glues shit together" width="100%"></p>
+<p align="center"><img src="docs/banner.png" alt="mduct — call MCP servers from the shell" width="100%"></p>
 
 One binary that turns any MCP server into a Unix tool — pipeable, scriptable,
 usable by hand — and keeps its tool schemas out of your model's context.
 
-<p align="center"><img src="docs/demo.gif" alt="mduct demo: list servers, inspect tools, call one, pipe it through jq, get denied by a guard" width="100%"></p>
+<p align="center"><img src="docs/demo.gif" alt="Terminal demo: listing MCP servers, inspecting tools without schemas, calling one, piping the result through jq, and a guard refusing a destructive tool" width="100%"></p>
 
 ```sh
 mduct call gitlab list_issues state=opened --json | jq '.[].title'
@@ -159,7 +159,7 @@ mduct daemon              # foreground, for when startup fails and you want to k
 mduct daemon --install    # systemd user unit, if you want it at login
 ```
 
-## What else is in there
+## What else mduct does
 
 | | |
 |---|---|
@@ -171,7 +171,7 @@ mduct daemon --install    # systemd user unit, if you want it at login
 | Isolated instances | One env var gives a second agent its own config, secrets, auth and daemon. |
 | Oversized-result guard | A result past `warnAbove` characters prints a ready-made `jq` projection instead of quietly costing you 40k characters. |
 
-## Arguments
+## Calling a tool: arguments and output
 
 httpie-style, because typing JSON on a command line is a punishment:
 
@@ -264,7 +264,7 @@ Measured with a 300 ms tool, five calls at once: 1561 ms serialised, 360 ms with
 `maxConcurrent: 5`. Start at 3 or 4 rather than a big number, and watch the
 server's own rate limit rather than mduct's.
 
-## The tool namespace
+## Putting MCP tool names in the agent's tool namespace
 
 The prompt block is prose, and prose competes with habit. Tool *selection*
 happens in the namespace, and nothing written into a prompt lands there.
