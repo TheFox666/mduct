@@ -3,7 +3,7 @@
 *because it glues shit together*
 
 One binary. Any number of MCP servers and plain CLIs behind a single command,
-none of their tool schemas anywhere near your model's context.
+with none of their tool schemas anywhere near your model's context.
 
 ```sh
 mduct call gitlab list_issues state=opened --json | jq '.[].title'
@@ -15,13 +15,13 @@ That's the whole idea. It is a duct. Things go through it.
 
 ## Why
 
-An MCP client loads every connected server's full tool schemas up front. One
-GitLab server is ~120 tools; three servers and you have spent a five-figure
-token count before the model has read your question. You pay it again on every
-context refresh, for tools that mostly go unused.
+An MCP client loads every connected server's tool schemas up front, all of
+them. One GitLab server is around 120 tools. Connect three servers and you have
+spent a five-figure token count before the model has read your question, and
+you pay it again on every context refresh, mostly for tools nobody calls.
 
-mduct puts a **one-line index per server** in the prompt and keeps the schemas
-on disk until something actually calls a tool:
+mduct puts one line per server in the prompt and leaves the schemas on disk
+until something actually calls a tool:
 
 ```
 MCP tools via `mduct` (list: mduct tools <server>; call: mduct call <server> <tool> key=value):
@@ -29,23 +29,23 @@ MCP tools via `mduct` (list: mduct tools <server>; call: mduct call <server> <to
   kubectl      — read-only cluster access
 ```
 
-~80 tokens instead of ~40k. The tool is still discoverable — it just isn't
-sitting in the context being expensive.
+Roughly 80 tokens against roughly 40k. The tool stays discoverable. It just
+stops being expensive.
 
-Lazy-loading the schemas gets you the token bill but a worse failure mode: out
-of context, out of mind. An agent forgets a capability it cannot see. The index
-is small enough to always be there.
+That last part is why the index exists at all instead of loading schemas lazily.
+Lazy loading fixes the token bill and introduces a worse problem: out of
+context, out of mind. An agent will not use a capability it cannot see.
 
 ## What you get
 
 | | |
 |---|---|
-| **Warm daemon** | Connections and OAuth sessions survive between calls. A stdio server isn't respawned and a remote isn't re-handshaked on every invocation. |
-| **Pipe-ready** | `--json` strips the prose some servers wrap around results, so `\| jq` works. `--compact` minifies. Exit codes mean what you think. |
-| **Guard in the daemon** | Per-server `allow`/`deny` patterns live where the model can't argue with them. |
-| **Secrets out of config** | `${VAR}` refs resolve from a 0600 store. Plaintext tokens never touch `servers.jsonc`. |
-| **MCP and plain CLIs** | `kubectl`, `playwright` and friends appear in the same list and are called the same way. Nobody cares which is which. |
-| **Isolated instances** | One env var gives a second agent its own config, secrets, auth and daemon. |
+| Warm daemon | Connections and OAuth sessions survive between calls. A stdio server isn't respawned and a remote isn't re-handshaked every time you invoke it. |
+| Pipe-ready output | `--json` strips the prose some servers wrap around their payload, so `\| jq` works. `--compact` minifies. Exit codes mean what you think they mean. |
+| Guards in the daemon | Per-server `allow`/`deny` patterns, living somewhere the model cannot argue with them. |
+| Secrets out of the config | `${VAR}` refs resolve from a 0600 store. Plaintext tokens never touch `servers.jsonc`. |
+| MCP and plain CLIs | `kubectl`, `playwright` and friends show up in the same list and are called the same way. Nobody has to care which is which. |
+| Isolated instances | One env var gives a second agent its own config, secrets, auth and daemon. |
 
 ## Install
 
@@ -53,12 +53,12 @@ is small enough to always be there.
 curl -fsSL https://raw.githubusercontent.com/TheFox666/mduct/main/install.sh | sh
 ```
 
-Downloads the release binary, verifies its checksum, drops `mduct` into
-`~/.local/bin`. From a checkout instead: `bun run build && cp dist/mduct ~/.local/bin/`.
+Fetches the release binary, checks its sha256, puts `mduct` in `~/.local/bin`.
+From a checkout: `bun run build && cp dist/mduct ~/.local/bin/`.
 
 ## Quickstart
 
-**Stash a token** — `${VAR}` refs resolve from a 0600 store, so it stays out of
+**Stash a token.** `${VAR}` refs resolve from a 0600 store, so it never reaches
 the config file:
 
 ```sh
@@ -84,8 +84,8 @@ echo "$YOUR_GITLAB_PAT" | mduct secret set GITLAB_PAT
 }
 ```
 
-Hand-editing optional: `mduct add` opens a picker, `mduct import` lifts servers
-out of existing Claude configs.
+You don't have to hand-edit it. `mduct add` opens a picker and `mduct import`
+lifts servers out of an existing Claude config.
 
 **Call things.** The daemon autostarts:
 
@@ -97,8 +97,8 @@ mduct call gitlab create_issue project=42 title="it broke again"
 mduct status                  # which instance answered, and from where
 ```
 
-**Wire an agent to it** — for Claude Code there are hooks; for anything else,
-paste `mduct index` into the system prompt:
+**Wire an agent to it.** Claude Code has hooks for this. Anything else: paste
+`mduct index` into the system prompt.
 
 ```sh
 mduct hook install claude
@@ -106,28 +106,20 @@ mduct hook install claude
 
 ## How it works
 
-```
-  you / your agent
-        │
-        │  mduct call gitlab list_issues state=opened
-        ▼
-   ┌──────────┐        unix socket        ┌─────────────────────────┐
-   │  mduct   │ ────────────────────────► │  daemon                 │
-   │   CLI    │ ◄──────────────────────── │  · live MCP connections │
-   └──────────┘        text / json        │  · OAuth sessions       │
-                                          │  · guards               │
-                                          └───────────┬─────────────┘
-                                                      │ stdio / http
-                                    ┌─────────────────┼─────────────────┐
-                                    ▼                 ▼                 ▼
-                                 gitlab            notes            kubectl
-                              (npx, stdio)      (remote, oauth)    (plain CLI)
+```mermaid
+flowchart TD
+    A["you / your agent<br/><code>mduct call gitlab list_issues</code>"] -->|unix socket| D
+    D["daemon<br/>live MCP connections · OAuth sessions · guards"] --> G["gitlab<br/><i>npx, stdio</i>"]
+    D --> N["notes<br/><i>remote, oauth</i>"]
+    D --> K["kubectl<br/><i>plain CLI</i>"]
+    D -->|text / json| A
 ```
 
-The CLI is a thin client. Everything with state — connections, tokens, guards —
-lives in the daemon, out of reach of whatever the model talked itself into.
+The CLI is a thin client. Everything with state lives in the daemon:
+connections, tokens, guards. That is deliberate. A guard the model could reach
+would be a suggestion.
 
-You never start it by hand:
+You never start the daemon by hand:
 
 ```sh
 mduct status              # up? which socket/config/secrets
@@ -149,12 +141,13 @@ mduct call srv tool --raw                      # full MCP envelope instead of th
 mduct call srv tool --json | jq .              # strip the server's prose
 ```
 
-More in the wiki: **[Arguments & output](../../wiki/Arguments-and-output)**.
+More argument forms and the output contract: [Arguments & output](../../wiki/Arguments-and-output).
 
 ## Configuration
 
-`~/.config/mduct/servers.jsonc` — JSONC, so comments survive your future self.
-Two sections, `servers` (MCP) and `tools` (plain CLIs), plus `defaults`.
+`~/.config/mduct/servers.jsonc`, in JSONC so your comments survive. Two
+sections that behave the same from outside, `servers` for MCP and `tools` for
+plain CLIs, plus `defaults`.
 
 ```jsonc
 "tools": {
@@ -173,7 +166,7 @@ mduct run kubectl get pods -n default    # with the tool's env/wrapping applied
 mduct tool status                        # installed / missing, + update hints for pinned npm tools
 ```
 
-Full field reference in the wiki: **[Configuration](../../wiki/Configuration)**.
+Every field with its default: [Configuration](../../wiki/Configuration).
 
 ### Guard
 
@@ -201,8 +194,8 @@ MDUCT_PROFILE=ci mduct servers           # ~/.config/mduct-ci/, own socket, own 
 ## Shadowing
 
 A server can declare which *other* tool calls it could have served, and mduct
-says so at the moment of the call — a token bucket decides how often, and the
-answer is never "no":
+says so at the moment of the call. A token bucket decides how often. The answer
+is never "no":
 
 ```jsonc
 "shadow": [{
@@ -215,13 +208,14 @@ answer is never "no":
 }]
 ```
 
-Because a prompt block is read once and then loses to habit. Measured on one
-two-day session: 21 calls to a code-index server against 270 greps into the
-repos it had indexed, with the index block present the entire time.
+This exists because a prompt block is read once and then loses to habit.
+Measured on one two-day session: 21 calls to a code-index server against 270
+greps into the repos that server had indexed, with the index block sitting in
+context the entire time. The agent knew. It reached for grep anyway.
 
-`mduct shadow` reports nudges against follow-up calls, so you can tell whether
-it earns its friction or is just being annoying. Details and tuning:
-**[Shadowing](../../wiki/Shadowing)**.
+`mduct shadow` counts nudges against follow-up calls, so you can tell whether
+it earns its friction or is just being annoying. Tuning and details:
+[Shadowing](../../wiki/Shadowing).
 
 ## Secrets & OAuth
 
@@ -246,16 +240,18 @@ mduct doctor                           # servers attached directly AND served he
 
 ## Wiki
 
-* **[Cookbook](../../wiki/Cookbook)** — recipes: jq pipelines, batch calls, CI, read-only agents, second instance
-* **[Configuration](../../wiki/Configuration)** — every field, with defaults
-* **[Arguments & output](../../wiki/Arguments-and-output)** — argument forms, output contract, exit codes
-* **[Agent integration](../../wiki/Agent-integration)** — Claude hooks, prompt block, other harnesses
-* **[Shadowing](../../wiki/Shadowing)** — nudge rules, buckets, measurement
-* **[Troubleshooting](../../wiki/Troubleshooting)** — when the daemon sulks
+| | |
+|---|---|
+| [Cookbook](../../wiki/Cookbook) | jq pipelines, batching, CI, read-only agents, a second instance |
+| [Configuration](../../wiki/Configuration) | every field, with defaults and failure modes |
+| [Arguments & output](../../wiki/Arguments-and-output) | argument forms, the output contract, exit codes |
+| [Agent integration](../../wiki/Agent-integration) | Claude hooks, the prompt block, other harnesses |
+| [Shadowing](../../wiki/Shadowing) | nudge rules, buckets, measurement |
+| [Troubleshooting](../../wiki/Troubleshooting) | when the daemon sulks |
 
 ## Not built yet
 
-npm and Homebrew channels. Until then: `install.sh` (release binary + checksum)
-or `bun run build`.
+npm and Homebrew channels. For now it is `install.sh` (release binary plus
+checksum) or `bun run build`.
 
 MIT.
