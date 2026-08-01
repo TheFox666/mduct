@@ -112,6 +112,12 @@ async function daemonRequest(method: string, params: unknown, timeoutMs?: number
       try { return await request(sock, method, params, timeoutMs); }
       catch (e2) { if (!isTransportError(e2)) throw e2; /* daemon up, real error — surface it (N3) */ }
     }
+    // A daemon that will not start is almost always a config it refuses to load, and that error
+    // already names the file and the fix. Reporting "did not come up" instead sends people off to
+    // run the daemon in the foreground just to read a message we could have printed here.
+    try { loadConfig(); } catch (cfgErr) {
+      throw new Error(`daemon did not start — the config does not load: ${(cfgErr as Error).message}`);
+    }
     throw new Error(`daemon did not come up on ${sock} — try: mduct daemon (foreground) to see why`);
   }
 }

@@ -71,3 +71,16 @@ test("unknown server error names the fix", async () => {
   expect(r.code).toBe(1);
   expect(r.err).toContain('unknown server "nope"');
 });
+
+test("a config the daemon refuses to load is reported as such, not as a dead socket", async () => {
+  const d = mkdtempSync(join(tmpdir(), "mduct-badcfg-"));
+  const env = { ...process.env, MDUCT_CONFIG: join(d, "servers.jsonc"), MDUCT_SOCKET: join(d, "s.sock") };
+  writeFileSync(env.MDUCT_CONFIG!, JSON.stringify({ servers: { half: { command: "true", url: "https://x" } } }));
+  const p = Bun.spawn([process.execPath, "src/main.ts", "servers"], { env, stdout: "pipe", stderr: "pipe" });
+  const err = await new Response(p.stderr).text();
+  await p.exited;
+  expect(err).toContain("the config does not load");
+  expect(err).toContain("half");              // which server
+  expect(err).toContain(env.MDUCT_CONFIG!);   // and which file
+  expect(err).not.toContain("did not come up");
+}, 30_000);
