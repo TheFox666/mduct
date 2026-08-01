@@ -22,6 +22,8 @@ export type ServerCfg = {
   url?: string; headers?: Record<string, string>; auth?: "oauth";
   guard?: { allow?: string[]; deny?: string[] };
   shadow?: ShadowRule[];
+  /** In-flight calls allowed at once for this server. Default 1 (strictly serialised). */
+  maxConcurrent?: number;
   idleTtlMin?: number; note?: string; disabled?: boolean;
 };
 /** A CLI capability (playwright, kubectl, aws): invoked via `mduct run <name>` with its env/wrapping. */

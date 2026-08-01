@@ -180,6 +180,19 @@ MDUCT_PROFILE=ci mduct servers           # ~/.config/mduct-ci/, own socket, own 
 | `MDUCT_SECRETS` | secret store |
 | `MDUCT_SOCKET` | daemon socket |
 
+### Parallel calls
+
+One call at a time per server, because the failure path closes the transport and
+not every MCP server is reentrant. If yours is, say so and calls overlap:
+
+```jsonc
+"gitlab": { "command": "…", "maxConcurrent": 5 }
+```
+
+Measured with a 300 ms tool, five calls at once: 1561 ms serialised, 360 ms with
+`maxConcurrent: 5`. Start at 3 or 4 rather than a big number, and watch the
+server's own rate limit rather than mduct's.
+
 ## Shadowing
 
 A server can declare which *other* tool calls it could have served, and mduct

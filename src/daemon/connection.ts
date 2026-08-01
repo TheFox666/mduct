@@ -55,14 +55,46 @@ export class ServerConnection {
   private client: Client | null = null;
   private connecting: Promise<Client> | null = null;
   private tools: ToolInfo[] | null = null;
-  private queue: Promise<unknown> = Promise.resolve();
-  private active = 0; // in-flight or queued calls — the idle sweep must skip a busy connection (#23)
+  private running = 0;                  // calls actually in flight
+  private waiters: (() => void)[] = []; // calls holding for a slot (or for a poisoned drain)
+  private poisoned = false;             // a call failed: reconnect once everyone is out
   connectedSince: number | null = null;
 
   constructor(readonly name: string, readonly cfg: ServerCfg) {}
 
-  /** True while any call is queued or running — checked by the daemon's idle sweep. */
-  get busy(): boolean { return this.active > 0; }
+  /** How many calls may be in flight at once. 1 = the old strict queue, and still the default. */
+  private get limit(): number {
+    return Math.max(1, this.cfg.maxConcurrent ?? 1);
+  }
+
+  /** True while any call is running or waiting — checked by the daemon's idle sweep (#23). */
+  get busy(): boolean { return this.running > 0 || this.waiters.length > 0; }
+
+  private acquire(): Promise<void> {
+    if (this.running < this.limit && !this.poisoned) {
+      this.running++;
+      return Promise.resolve();
+    }
+    return new Promise<void>((r) => this.waiters.push(r)).then(() => this.acquire());
+  }
+
+  /**
+   * Give the slot back, and handle the case the strict queue used to make impossible: a call
+   * failed while siblings were still in flight. Closing the transport there would kill THEIR
+   * calls too, so the failure only marks the connection; the last one out does the close, and
+   * nobody new starts until then.
+   */
+  private release(): void {
+    this.running--;
+    if (this.poisoned && this.running === 0) {
+      void this.client?.close().catch(() => {});
+      this.drop();
+      this.poisoned = false;
+    }
+    if (this.poisoned) return; // still draining — waiters stay parked
+    const wake = this.waiters.splice(0, this.limit - this.running);
+    for (const w of wake) w();
+  }
 
   private drop(): void {
     this.client = null;
@@ -111,16 +143,19 @@ export class ServerConnection {
   }
 
   /**
-   * Serialized per server (MCP servers are not uniformly reentrant). The caller may time out,
-   * but the QUEUE SLOT is held until the underlying call actually settles — otherwise the next
-   * call would hit a still-busy server (#4). A failed call drops the client to force reconnect (#5).
+   * One in-flight call per server by default: MCP servers are not uniformly reentrant, and the
+   * failure path below closes the transport, which is only safe when nothing else is using it.
+   * `maxConcurrent` raises the limit for a server you know handles it — the protocol itself has
+   * request ids and does not care.
+   *
+   * The caller may time out, but the SLOT is held until the underlying call actually settles;
+   * otherwise the next call would hit a still-busy server (#4).
    */
   call(tool: string, args: Record<string, unknown>, timeoutMs = 60_000): Promise<CallResult> {
     if (!guardAllows(this.cfg.guard, tool))
       return Promise.reject(new Error(`guard: tool "${tool}" is blocked for server "${this.name}" — edit its guard in the config to change this`));
 
-    this.active++;
-    const real = this.queue.then(async () => {
+    const real = this.acquire().then(async () => {
       const client = await this.ensure();
       // schema-aware coercion: type each scalar arg by the tool's declared param type (cached
       // listTools). Fail-safe — if the schema can't be fetched, args pass through unchanged.
@@ -128,17 +163,14 @@ export class ServerConnection {
       try {
         return (await client.callTool({ name: tool, arguments: normalizeArgs(args, schema) })) as CallResult;
       } catch (e) {
-        // close BEFORE drop: drop() only nulls refs, it never kills the child. The common case is a
-        // LIVE transport that returned an error (bad args, server-side throw) — dropping without
-        // closing orphans the child, and the next call spawns a fresh one (child leak). Calls are
-        // queue-serialized so `client` is this.client; closing it is safe.
-        void client.close().catch(() => {});
-        this.drop();
+        // The child must be closed, not just dereferenced: drop() only nulls refs, so dropping
+        // alone orphans the process and the next call spawns a second one (child leak). With
+        // siblings in flight the close waits for the drain — see release().
+        this.poisoned = true;
         throw e;
       }
     });
-    this.queue = real.catch(() => {}); // next call waits for THIS one's real completion
-    real.finally(() => { this.active--; }).catch(() => {}); // decrement + swallow (caller sees the error via the race below)
+    real.finally(() => { this.release(); }).catch(() => {}); // free the slot, swallow (the caller sees the error via the race below)
 
     // caller-facing timeout: races real completion, but never cancels the queue slot
     return new Promise<CallResult>((resolve, reject) => {
