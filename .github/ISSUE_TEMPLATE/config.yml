@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Anything touching credentials, guards or the secret store
+    url: https://github.com/TheFox666/mduct/blob/main/CONTRIBUTING.md#security
+    about: Please mail me instead of opening a public issue.
+  - name: Before a large change
+    url: https://github.com/TheFox666/mduct/blob/main/CONTRIBUTING.md
+    about: The constraints are worth two minutes before an afternoon of work.

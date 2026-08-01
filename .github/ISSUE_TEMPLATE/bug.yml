@@ -1,0 +1,44 @@
+name: Bug report
+description: Something behaves differently than it says it does
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two things answer most reports before I read the rest: which instance
+        answered, and what the daemon logged. Both are in the fields below.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran and what came back. Paste it rather than describing it.
+      render: shell
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations: { required: true }
+  - type: textarea
+    id: status
+    attributes:
+      label: mduct status
+      description: |
+        Which socket, config and secret store answered. A surprising number of
+        reports are a second instance or a stale MDUCT_PROFILE in the shell.
+      render: shell
+      placeholder: $ mduct status
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes:
+      label: mduct logs
+      description: The last lines of daemon activity. Redact anything you would not paste in public.
+      render: shell
+      placeholder: $ mduct logs
+  - type: input
+    id: version
+    attributes:
+      label: Version and platform
+      placeholder: "0.5.1, macOS 15 arm64, installed via brew"
+    validations: { required: true }

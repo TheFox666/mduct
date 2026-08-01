@@ -375,6 +375,12 @@ mduct doctor                           # servers attached directly AND served he
 | [Shadowing](../../wiki/Shadowing) | nudge rules, buckets, measurement |
 | [Troubleshooting](../../wiki/Troubleshooting) | when the daemon sulks |
 
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) — mostly the four constraints a change must
+not cross, so nobody finds out after writing it, plus the one house rule: a
+change that can break carries a test that fails without it.
+
 ## Not built yet
 
 npm. It would mean either four platform packages of a ~90 MB binary, or dropping
