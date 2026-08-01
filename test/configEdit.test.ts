@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../src/shared/config";
-import { addServer, addTool, removeServer, setDisabled } from "../src/shared/configEdit";
+import { addServer, addTool, externalizeSecrets, removeServer, secretRef, setDisabled } from "../src/shared/configEdit";
+import { read as readSecrets, setSecret } from "../src/shared/secrets";
 
 beforeEach(() => {
   process.env.MDUCT_CONFIG = join(mkdtempSync(join(tmpdir(), "mduct-")), "servers.jsonc");
@@ -58,5 +59,42 @@ describe("configEdit", () => {
     const raw = readFileSync(process.env.MDUCT_CONFIG!, "utf8");
     expect(raw).toContain("${SOMEVAR}");
     expect(raw).not.toContain("SECRET-VALUE");
+  });
+});
+
+describe("secretRef — the name a lifted credential gets", () => {
+  beforeEach(() => {
+    const d = mkdtempSync(join(tmpdir(), "mduct-sec-"));
+    process.env.MDUCT_CONFIG = join(d, "servers.jsonc");
+    process.env.MDUCT_SECRETS = join(d, "secrets.json");
+  });
+
+  test("drops the stutter when the key already names the owner", () => {
+    // weather + WEATHER_KEY was WEATHER_WEATHER_KEY
+    expect(secretRef("weather", "WEATHER_KEY")).toBe("WEATHER_KEY");
+    expect(secretRef("gitlab", "GITLAB_PERSONAL_ACCESS_TOKEN")).toBe("GITLAB_PERSONAL_ACCESS_TOKEN");
+  });
+
+  test("keeps the prefix when the key says nothing about the owner", () => {
+    expect(secretRef("notes", "API_KEY")).toBe("NOTES_API_KEY");
+    expect(secretRef("my-server", "TOKEN")).toBe("MY_SERVER_TOKEN");
+  });
+
+  test("a one-letter owner never eats the prefix", () => {
+    expect(secretRef("x", "XYZ_TOKEN")).toBe("X_XYZ_TOKEN");
+  });
+
+  test("falls back to the prefixed name when the short one is taken by another value", () => {
+    setSecret("WEATHER_KEY", "first-server-value");
+    expect(secretRef("weather", "WEATHER_KEY", "a-different-value")).toBe("WEATHER_WEATHER_KEY");
+    // same value = the same import running again, not a clash
+    expect(secretRef("weather", "WEATHER_KEY", "first-server-value")).toBe("WEATHER_KEY");
+  });
+
+  test("end to end: importing a server leaves a readable ref and no plaintext", () => {
+    const s = externalizeSecrets("weather", { command: "npx", env: { WEATHER_KEY: "sk-123", HOST: "example.com" } });
+    expect(s.env!.WEATHER_KEY).toBe("${WEATHER_KEY}");
+    expect(s.env!.HOST).toBe("example.com");        // not credential-looking, left alone
+    expect(readSecrets().WEATHER_KEY).toBe("sk-123");
   });
 });

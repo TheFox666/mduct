@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { configPath, type Config, type ServerCfg, type ToolCfg } from "./config";
-import { setSecret } from "./secrets";
+import { read as readSecrets, setSecret } from "./secrets";
 import { stripJsonc } from "./util";
 
 /** RAW config — no env expansion. Mutations must never bake expanded secrets into the file. */
@@ -114,10 +114,26 @@ function externalizeRecord(owner: string, rec: Record<string, string> | undefine
   for (const [k, v] of Object.entries(rec)) {
     if (/\$\{[\w]+\}/.test(v)) continue; // already contains a reference — leave it
     if (!isHeader && !isSecretKey(k)) continue; // env: only credential-looking keys
-    const ref = `${owner}_${k}`.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+    const ref = secretRef(owner, k, v);
     setSecret(ref, v);
     rec[k] = `\${${ref}}`;
   }
+}
+
+/**
+ * Name for a secret lifted out of a config: `<OWNER>_<KEY>`, minus the stutter.
+ *
+ * `weather` + `WEATHER_KEY` was becoming `WEATHER_WEATHER_KEY`, which nobody wants to read or
+ * type. When the key already carries the owner's name, the prefix adds nothing and is dropped —
+ * unless that shorter name is already taken by a DIFFERENT value, in which case the prefixed
+ * form is the safe answer. Same owner and value re-importing is not a clash, it is an overwrite.
+ */
+export function secretRef(owner: string, key: string, value?: string): string {
+  const norm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+  const o = norm(owner), k = norm(key), full = `${o}_${k}`;
+  if (!k.startsWith(o) || o.length < 2) return full;
+  const existing = readSecrets()[k];
+  return existing === undefined || existing === value ? k : full;
 }
 
 export function externalizeSecrets(serverName: string, server: ServerCfg): ServerCfg {
