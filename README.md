@@ -1,7 +1,7 @@
 <p align="center"><img src="docs/banner.png" alt="mduct — because it glues shit together" width="100%"></p>
 
-One binary in front of any number of MCP servers and plain CLIs, with none of
-their tool schemas in your model's context.
+One binary that turns any MCP server into a Unix tool — pipeable, scriptable,
+usable by hand — and keeps its tool schemas out of your model's context.
 
 <p align="center"><img src="docs/demo.gif" alt="mduct demo: list servers, inspect tools, call one, pipe it through jq, get denied by a guard" width="100%"></p>
 
@@ -9,17 +9,44 @@ their tool schemas in your model's context.
 mduct call gitlab list_issues state=opened --json | jq '.[].title'
 ```
 
+MCP servers don't come with a command line. This gives them one.
 It is a duct. Things go through it.
 
 ## Why
 
-An MCP client loads every connected server's tool schemas up front, all of them.
-Measured on one GitLab server: 186 tools, about 168 kB of JSON Schema, roughly
-40k tokens spent before the model has read your question. You pay it again on
-every context refresh, mostly for tools nobody calls.
+An MCP server has no command line. It speaks JSON-RPC to an LLM client and that
+is the whole of it — you cannot pipe it, script it, loop over it, put it in a
+cron job, or try it by hand. Whatever it can do is reachable from exactly one
+place.
 
-mduct puts a few lines per server in the prompt and leaves the schemas on disk
-until something calls a tool:
+mduct makes them shell citizens:
+
+```sh
+# every open MR whose source branch is already gone
+mduct call gitlab list_merge_requests project_id=grp/proj state=opened --json \
+  | jq -r '.[].source_branch' \
+  | while read -r b; do git ls-remote --exit-code --heads origin "$b" >/dev/null || echo "stale: $b"; done
+
+# the same tool, across a set of projects, in a loop
+for p in api web worker; do
+  mduct call gitlab list_pipelines project_id="grp/$p" --json | jq -c "{repo:\"$p\", last:.[0].status}"
+done
+```
+
+None of that is possible against an MCP server otherwise, and none of it needs a
+model. Humans get to use these servers too.
+
+### The context bill is a side effect of the pipe
+
+Because a shell sits in the middle, you filter *before* anything becomes
+context. A tool that returns 20 issues returns 20 full issues; you wanted three
+fields. Measured on a real call: 24,568 characters down to 1,768.
+
+That is the part worth having. The schemas are the smaller half of the same
+story: a client loads every connected server's tool definitions up front — one
+GitLab server is 186 tools and ~168 kB of JSON Schema, call it 40k tokens before
+the model reads your question. mduct leaves them on disk and puts one line per
+server in the prompt instead:
 
 ```
 MCP tools via `mduct` CLI (list+args: mduct tools <server>; call: mduct call <server> <tool> key=value):
@@ -31,18 +58,14 @@ CLI tools via `mduct` CLI (what it can do: mduct tools <tool>; run: mduct run <t
   kubectl      — read-only cluster access
 ```
 
-A server small enough to carry its signatures brings them along, so an agent can
-see the call instead of remembering to ask for it. A 189-tool server collapses to
-a count and a pointer, because 16 kB of names in every context is the thing this
-exists to prevent. Measured on a real seven-server setup: 2.9 kB in total.
+2.9 kB for a seven-server setup. A server small enough carries its signatures so
+an agent can see the call rather than remember to ask; a 189-tool one collapses
+to a count and a pointer. The signatures come from a cache the daemon fills as it
+is used, so the index never connects and works cold in a session hook.
 
-The signatures come from a cache the daemon fills as a side effect of use, so the
-index never connects and works cold in a session hook. `mduct index --refresh`
-fills it on purpose; `indexTools` per server overrides the threshold either way.
-
-Loading schemas lazily instead would fix the token bill and introduce a worse
-problem: out of context, out of mind. An agent will not use a capability it
-cannot see, and this is the whole reason the index exists at all.
+Lazy-loading the schemas would fix the token bill and leave the interesting part
+undone — and it introduces its own problem: out of context, out of mind. An
+agent will not use a capability it cannot see.
 
 ## Install
 
