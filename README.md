@@ -278,8 +278,8 @@ for both.
 ## Shadowing
 
 A server can declare which *other* tool calls it could have served, and mduct
-says so at the moment of the call. A token bucket decides how often. The answer
-is never "no":
+says so at the moment of the call. The call still runs — the note rides along
+with its result — and a token bucket decides how often it speaks:
 
 ```jsonc
 "shadow": [{
@@ -297,9 +297,12 @@ Measured on one two-day session: 21 calls to a code-index server against 270
 greps into the repos that server had indexed, with the index block sitting in
 context the entire time. The agent knew. It reached for grep anyway.
 
-`mduct shadow` counts nudges against follow-up calls, so you can tell whether
-it earns its friction or is just being annoying. Tuning and details:
-[Shadowing](../../wiki/Shadowing).
+The note arrives as `additionalContext`, never as an approval: a nudge must not
+widen permissions, so a call that would have asked still asks. A rule that really
+must stop something sets `block: true` and gets the old denial back.
+
+`mduct shadow` counts nudges against follow-up calls, so you can tell whether the
+hint changes anything. Tuning and details: [Shadowing](../../wiki/Shadowing).
 
 ## Secrets & OAuth
 

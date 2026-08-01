@@ -16,6 +16,9 @@ export type ShadowRule = {
   budget?: number;
   /** Minutes to refill one hint. 0 (default) never refills: one bucket per session, as before. */
   refillMin?: number;
+  /** Block the call instead of letting it run with a note attached. Default false — a hint that
+   *  costs a turn is friction, and most shadowed calls are legitimate. */
+  block?: boolean;
 };
 export type ServerCfg = {
   command?: string; args?: string[]; env?: Record<string, string>;

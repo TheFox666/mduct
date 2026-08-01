@@ -171,18 +171,19 @@ function shadowBranch(ev: PreToolUseInput, toolName: string): number {
   record({ ts: new Date().toISOString(), session, kind: "nudge", server: hit.server, rule: hit.rule, tool: toolName });
   const left = tokens - 1;
   const bucket = hit.refillMin
-    ? `${left}/${hit.budget} Hinweise übrig, +1 alle ${hit.refillMin} min`
-    : `${left}/${hit.budget} Hinweise übrig in dieser Session`;
-  console.log(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "deny",
-      permissionDecisionReason:
-        `${hit.hint}\n\n` +
-        `(mduct-Hinweis zu "${hit.server}" — ${bucket}. ${toolName} ist nicht gesperrt: war es hier ` +
-        `das richtige Werkzeug, ruf es einfach nochmal auf.)`,
-    },
-  }));
+    ? `${left}/${hit.budget} left, +1 every ${hit.refillMin} min`
+    : `${left}/${hit.budget} left this session`;
+
+  // A hint does not have to cost a turn. `additionalContext` rides along with the tool result, so
+  // the command RUNS and the note arrives anyway — the friction the deny-and-retry version charged
+  // for every single nudge simply is not needed. Deliberately no permissionDecision: "allow" would
+  // auto-approve a call that should have asked, and a nudge must never widen permissions.
+  const note = `${hit.hint}\n\n(mduct, server "${hit.server}" — ${bucket}. This ran; the note is for the next one.)`;
+  console.log(JSON.stringify(
+    hit.block
+      ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: note } }
+      : { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: note } },
+  ));
   return 0;
 }
 

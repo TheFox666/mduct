@@ -75,18 +75,32 @@ async function hook(input: unknown): Promise<{ out: string; code: number }> {
 const grepCall = (session: string) =>
   ({ tool_name: "Bash", tool_input: { command: `cd ${dir} && grep -n foo x.ts` }, cwd: dir, session_id: session });
 
-test("first shadowed grep is redirected with the server's own hint", async () => {
+test("the hint rides along with the call instead of blocking it", async () => {
   const r = await hook(grepCall("s-once"));
   expect(r.code).toBe(0);
-  const d = JSON.parse(r.out);
-  expect(d.hookSpecificOutput.permissionDecision).toBe("deny");
-  expect(d.hookSpecificOutput.permissionDecisionReason).toContain("mduct call idx search_code");
-  // the message states the bucket state and that the tool is not banned
-  expect(d.hookSpecificOutput.permissionDecisionReason).toContain("0/1 Hinweise übrig");
-  expect(d.hookSpecificOutput.permissionDecisionReason).toContain("nicht gesperrt");
+  const o = JSON.parse(r.out).hookSpecificOutput;
+  // no decision at all: "allow" would auto-approve a call that should have asked
+  expect(o.permissionDecision).toBeUndefined();
+  expect(o.additionalContext).toContain("mduct call idx search_code");
+  expect(o.additionalContext).toContain("0/1 left");
 });
 
-test("the SECOND identical grep in that session runs untouched — a redirect, not a ban", async () => {
+test("block: true is still available for a rule that really must stop the call", async () => {
+  const dir2 = mkdtempSync(join(tmpdir(), "mduct-block-"));
+  const env2 = { ...process.env, MDUCT_CONFIG: join(dir2, "c.jsonc"), MDUCT_CACHE: join(dir2, "cache") };
+  writeFileSync(env2.MDUCT_CONFIG!, JSON.stringify({
+    servers: { idx: { command: "true", shadow: [{ bash: "\\bgrep\\b", pathIn: [dir2], hint: "use the index", block: true }] } },
+  }));
+  const p = Bun.spawn([process.execPath, "src/main.ts", "hook", "run", "pre-tool-use"], {
+    env: env2, stdout: "pipe", stderr: "pipe",
+    stdin: new TextEncoder().encode(JSON.stringify({ tool_name: "Bash", tool_input: { command: `cd ${dir2} && grep x y` }, cwd: dir2, session_id: "b1" })),
+  });
+  const out = await new Response(p.stdout).text();
+  await p.exited;
+  expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe("deny");
+});
+
+test("the SECOND identical grep in that session gets no note — the bucket is about attention", async () => {
   const again = await hook(grepCall("s-once"));
   expect(again.out.trim()).toBe("");
   // a fresh session gets the one hint again

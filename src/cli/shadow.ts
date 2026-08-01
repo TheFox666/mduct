@@ -13,14 +13,15 @@ import type { Config, ShadowRule } from "../shared/config";
  * had indexed, the index block present throughout. A PreToolUse denial is the only channel that lands
  * the wrong tool is chosen.
  *
- * Why a budget: the point is a redirect, not a prohibition. grep is a legitimate tool; after the
- * budget is spent the rule goes quiet for the rest of the session and never fires again.
+ * Why a budget: the note is context, and context repeated on every grep is noise. The bucket keeps
+ * it occasional. It no longer limits DAMAGE — the hint rides along with the tool result and the
+ * command runs regardless — so the budget is about attention, not about getting out of the way.
  *
  * mduct knows nothing about what any server does — it matches the patterns the server declared and
  * prints the server's own hint. Remove the server from the config and the mechanism is inert.
  */
 
-export type Hit = { server: string; rule: number; hint: string; budget: number; refillMin: number };
+export type Hit = { server: string; rule: number; hint: string; budget: number; refillMin: number; block: boolean };
 
 const expandHome = (p: string) => (p.startsWith("~") ? join(homedir(), p.slice(1)) : p);
 
@@ -83,7 +84,7 @@ export function findHit(cfg: Config, toolName: string, command: string, cwd: str
     if (s.disabled || !s.shadow?.length) continue;
     for (const [i, rule] of s.shadow.entries())
       if (ruleMatches(rule, toolName, command, cwd))
-        return { server, rule: i, hint: rule.hint, budget: rule.budget ?? 1, refillMin: rule.refillMin ?? 0 };
+        return { server, rule: i, hint: rule.hint, budget: rule.budget ?? 1, refillMin: rule.refillMin ?? 0, block: rule.block ?? false };
   }
   return null;
 }
