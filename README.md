@@ -1,49 +1,28 @@
 <p align="center"><img src="docs/banner.png" alt="mduct — because it glues shit together" width="100%"></p>
 
-One binary. Any number of MCP servers and plain CLIs behind a single command,
-with none of their tool schemas anywhere near your model's context.
+One binary in front of any number of MCP servers and plain CLIs, with none of
+their tool schemas in your model's context.
+
+<p align="center"><img src="docs/demo.gif" alt="mduct demo: list servers, inspect tools, call one, pipe it through jq, get denied by a guard" width="100%"></p>
 
 ```sh
 mduct call gitlab list_issues state=opened --json | jq '.[].title'
 ```
 
-That's the whole idea. It is a duct. Things go through it.
-
----
+It is a duct. Things go through it.
 
 ## Why
 
-An MCP client loads every connected server's tool schemas up front, all of
-them. Measured on one GitLab server: 186 tools, about 168 kB of JSON Schema.
-That is roughly 40k tokens spent before the model has read your question, paid
-again on every context refresh, mostly for tools nobody calls.
+An MCP client loads every connected server's tool schemas up front, all of them.
+Measured on one GitLab server: 186 tools, about 168 kB of JSON Schema, roughly
+40k tokens spent before the model has read your question. You pay it again on
+every context refresh, mostly for tools nobody calls.
 
-mduct puts one line per server in the prompt and leaves the schemas on disk
-until something actually calls a tool:
+mduct puts one line per server in the prompt, about 20 tokens each, and leaves
+the schemas on disk until something calls a tool. That is the whole trick.
 
-```
-MCP tools via `mduct` (list: mduct tools <server>; call: mduct call <server> <tool> key=value):
-  gitlab       — GitLab: MRs, pipelines, issues, repos
-  kubectl      — read-only cluster access
-```
-
-One line is about 20 tokens. A full index of seven servers and three CLI tools
-measures 789 bytes. The tool stays discoverable, it just stops being expensive.
-
-That last part is why the index exists at all instead of loading schemas lazily.
-Lazy loading fixes the token bill and introduces a worse problem: out of
-context, out of mind. An agent will not use a capability it cannot see.
-
-## What you get
-
-| | |
-|---|---|
-| Warm daemon | Connections and OAuth sessions survive between calls. A stdio server isn't respawned and a remote isn't re-handshaked every time you invoke it. |
-| Pipe-ready output | `--json` strips the prose some servers wrap around their payload, so `\| jq` works. `--compact` minifies. Exit codes mean what you think they mean. |
-| Guards in the daemon | Per-server `allow`/`deny` patterns, living somewhere the model cannot argue with them. |
-| Secrets out of the config | `${VAR}` refs resolve from a 0600 store. Plaintext tokens never touch `servers.jsonc`. |
-| MCP and plain CLIs | `kubectl`, `playwright` and friends show up in the same list and are called the same way. Nobody has to care which is which. |
-| Isolated instances | One env var gives a second agent its own config, secrets, auth and daemon. |
+Loading them lazily would fix the token bill and introduce a worse problem: out
+of context, out of mind. An agent will not use a capability it cannot see.
 
 ## Install
 
@@ -126,6 +105,18 @@ mduct daemon --stop       # next call restarts it
 mduct daemon              # foreground, for when startup fails and you want to know why
 mduct daemon --install    # systemd user unit, if you want it at login
 ```
+
+## What else is in there
+
+| | |
+|---|---|
+| Warm daemon | Connections and OAuth sessions survive between calls. A stdio server isn't respawned and a remote isn't re-handshaked every time you invoke it. |
+| Pipe-ready output | `--json` strips the prose some servers wrap around their payload. `--compact` minifies. Exit codes mean what you think they mean. |
+| Guards in the daemon | Per-server `allow`/`deny` patterns, living somewhere the model cannot argue with them. |
+| Secrets out of the config | `${VAR}` refs resolve from a 0600 store. Plaintext tokens never touch `servers.jsonc`. |
+| MCP and plain CLIs | `kubectl`, `playwright` and friends show up in the same list and are called the same way. Nobody has to care which is which. |
+| Isolated instances | One env var gives a second agent its own config, secrets, auth and daemon. |
+| Oversized-result guard | A result past `warnAbove` characters prints a ready-made `jq` projection instead of quietly costing you 40k characters. |
 
 ## Arguments
 
