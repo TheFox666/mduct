@@ -377,7 +377,11 @@ mduct doctor                           # servers attached directly AND served he
 
 ## Not built yet
 
-npm and Homebrew channels. For now it is `install.sh` (release binary plus
-checksum) or `bun run build`.
+npm. It would mean either four platform packages of a ~90 MB binary, or dropping
+the Bun APIs the daemon is built on — `Bun.listen`, `Bun.connect`, `Bun.serve`
+are the unix socket and the OAuth callback — for their node equivalents. About
+150 lines, and then `npx mduct` would work without installing anything.
+
+Windows, for the same reason: the IPC is a unix socket.
 
 MIT.
