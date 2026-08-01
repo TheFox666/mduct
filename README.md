@@ -256,6 +256,12 @@ payload straight into the context.
 mduct hook install claude              # registers the catalogue too
 ```
 
+The catalogue reloads itself: it watches the config and its tool cache, and sends
+`notifications/tools/list_changed` when what it would serve actually differs. Flip
+`mcpCatalog` on a server, or call a server for the first time so its tools become
+known, and the names appear in a running session — no restart, and no wake-up for
+a rewrite that changed nothing.
+
 Hooks live in `settings.json` and MCP servers in `.claude.json`, so the install
 touches both — leaving the second to you is an install that half-works and a
 catalogue nobody sees. `--remove` takes it back out, and session start says so

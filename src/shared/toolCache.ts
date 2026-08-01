@@ -27,7 +27,7 @@ export type CachedTool = { name: string; sig: string; desc?: string };
  * directory, and a fixture server that happens to be called "gitlab" then advertises `boom` and
  * `admin_delete` in the index of the real one. An index that lies is worse than no index.
  */
-function dir(): string {
+export function toolCacheDir(): string {
   let key = "default";
   try {
     const h = createHash("sha1").update(configPath()).digest("hex").slice(0, 10);
@@ -37,12 +37,12 @@ function dir(): string {
 }
 
 function file(server: string): string {
-  return join(dir(), `${server.replace(/[^\w.-]/g, "_")}.json`);
+  return join(toolCacheDir(), `${server.replace(/[^\w.-]/g, "_")}.json`);
 }
 
 export function writeToolCache(server: string, tools: CachedTool[]): void {
   try {
-    mkdirSync(dir(), { recursive: true, mode: 0o700 });
+    mkdirSync(toolCacheDir(), { recursive: true, mode: 0o700 });
     writeFileSync(file(server), JSON.stringify(tools), { mode: 0o600 });
   } catch { /* a cache that cannot be written must never break a call */ }
 }
@@ -59,8 +59,8 @@ export function readToolCache(server: string): CachedTool[] | null {
 /** Drop cached servers that are no longer configured, so a removed server stops showing up. */
 export function pruneToolCache(configured: string[]): void {
   try {
-    if (!existsSync(dir())) return;
+    if (!existsSync(toolCacheDir())) return;
     const keep = new Set(configured.map((s) => `${s.replace(/[^\w.-]/g, "_")}.json`));
-    for (const f of readdirSync(dir())) if (!keep.has(f)) writeFileSync(join(dir(), f), "[]");
+    for (const f of readdirSync(toolCacheDir())) if (!keep.has(f)) writeFileSync(join(toolCacheDir(), f), "[]");
   } catch { /* best effort */ }
 }

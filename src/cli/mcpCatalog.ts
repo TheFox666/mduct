@@ -1,8 +1,11 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { mkdirSync, watch } from "node:fs";
+import { dirname, join } from "node:path";
 import { loadConfig } from "../shared/config";
-import { readToolCache } from "../shared/toolCache";
+import { configPath } from "../shared/paths";
+import { readToolCache, toolCacheDir } from "../shared/toolCache";
 
 /**
  * `mduct mcp` — a catalogue, not a proxy.
@@ -58,8 +61,16 @@ export function argHint(sig: string): string {
     .map((a) => `${a.replace(/\?$/, "")}=…`).join(" ");
 }
 
+/** Stable fingerprint of what the catalogue currently is, so a watcher can tell real change from noise. */
+export function catalogFingerprint(entries: CatalogEntry[]): string {
+  return entries.map((e) => `${e.name}\u0000${e.description}`).join("\u0001");
+}
+
 export async function runCatalogServer(): Promise<number> {
-  const server = new Server({ name: "mduct", version: "0" }, { capabilities: { tools: {} } });
+  // listChanged: the catalogue is data, and the data moves — a server gets its first call and its
+  // tools appear in the cache, someone flips mcpCatalog. Without the notification the namespace
+  // holds whatever was true when the session started, and the client has no reason to ask again.
+  const server = new Server({ name: "mduct", version: "0" }, { capabilities: { tools: { listChanged: true } } });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     // re-read per request: the cache grows as servers get used, and a long-lived session should
@@ -83,5 +94,44 @@ export async function runCatalogServer(): Promise<number> {
   });
 
   await server.connect(new StdioServerTransport());
+
+  // Watch the two things the catalogue is made of: the config (which servers opted in) and the
+  // tool cache (what those servers can do). Debounced, and only when the rendered result actually
+  // differs — a cache rewrite with identical content must not make the client re-fetch.
+  let last = catalogFingerprint(safeEntries());
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const check = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const now = catalogFingerprint(safeEntries());
+      if (now === last) return;
+      last = now;
+      void server.sendToolListChanged().catch(() => {}); // a closed client is not our problem
+    }, 300);
+  };
+  for (const dir of watchTargets()) {
+    try { watch(dir, check); } catch { /* a missing dir just means nothing to watch yet */ }
+  }
+
   return await new Promise<number>(() => {}); // stdio server runs until the client closes it
+}
+
+function safeEntries(): CatalogEntry[] {
+  try { return catalogEntries(loadConfig()); } catch { return []; } // mid-write config: keep serving the last good one
+}
+
+/**
+ * The config's directory and this config's tool-cache directory.
+ *
+ * The cache dir is the hashed per-config one, not its parent: a non-recursive watch on the parent
+ * never sees a write one level down, which meant a server learning its tools — the most common
+ * change there is — notified nobody. It is created up front so the watch has something to attach to.
+ */
+export function watchTargets(): string[] {
+  const out = [dirname(configPath())];
+  try {
+    mkdirSync(toolCacheDir(), { recursive: true, mode: 0o700 });
+    out.push(toolCacheDir());
+  } catch { /* unwritable cache: config changes still reload */ }
+  return out;
 }
