@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -81,5 +81,49 @@ describe("mduct tools <cliTool> — discovery for the non-MCP half", () => {
     expect(err).toContain("unknown server");
     expect(err).toContain("srv");                     // the servers
     expect(err).toContain("fake");                    // ...and the CLI tools it would otherwise hide
+  }, 30_000);
+});
+
+describe("lib — a CLI tool that also exposes a library", () => {
+  const d = mkdtempSync(join(tmpdir(), "mduct-lib-"));
+  const cfg = join(d, "servers.jsonc");
+  writeFileSync(cfg, JSON.stringify({
+    servers: {},
+    tools: {
+      withlib: { run: "echo", lib: "left-pad@1.3.0", note: "tiny" },
+      plain:   { run: "echo", env: { FOO: "bar" }, note: "no lib" },
+      bare:    { run: "echo", note: "nothing at all" },
+    },
+  }));
+  const env = { ...process.env, MDUCT_CONFIG: cfg, MDUCT_CACHE: join(d, "cache"), MDUCT_SOCKET: join(d, "s.sock") };
+  const run = async (...argv: string[]) => {
+    const p = Bun.spawn([process.execPath, "src/main.ts", ...argv], { env, stdout: "pipe", stderr: "pipe" });
+    const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+    return { out, err, code };
+  };
+
+  test("setup installs the library into the tool's own directory", async () => {
+    const { out, code } = await run("tool", "setup", "withlib");
+    expect(code).toBe(0);
+    expect(out).toContain("library ready");
+    expect(existsSync(join(d, "cache", "lib", "withlib", "node_modules", "left-pad"))).toBe(true);
+  }, 120_000);
+
+  test("env exports a NODE_PATH that actually resolves the package", async () => {
+    const { out } = await run("env", "withlib");
+    expect(out).toMatch(/^export NODE_PATH='.*\/lib\/withlib\/node_modules'$/m);
+    const nodePath = out.match(/NODE_PATH='([^']+)'/)![1]!;
+    const p = Bun.spawn([process.execPath, "-e", 'require("left-pad"); console.log("resolved")'],
+      { env: { ...process.env, NODE_PATH: nodePath }, stdout: "pipe" });
+    expect(await new Response(p.stdout).text()).toContain("resolved");
+  }, 60_000);
+
+  test("a tool without a lib still exports its plain env, and one with nothing says so", async () => {
+    const plain = await run("env", "plain");
+    expect(plain.out).toContain("export FOO='bar'");
+    expect(plain.out).not.toContain("NODE_PATH");
+    const bare = await run("env", "bare");
+    expect(bare.code).toBe(1);
+    expect(bare.err).toContain("no env or lib");
   }, 30_000);
 });

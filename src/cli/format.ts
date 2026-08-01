@@ -1,5 +1,6 @@
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
+import { readToolCache } from "../shared/toolCache";
 import { join } from "node:path";
 
 /** Write to stdout SYNCHRONOUSLY and COMPLETELY (fd 1). Traps this avoids: (1) console.log is async
@@ -196,13 +197,34 @@ function coerce(v: string): unknown {
 }
 
 /** The prompt/index block — MCP servers + CLI tools — shared by `mduct index` and the SessionStart hook. */
-export function renderIndex(cfg: { servers: Record<string, { note?: string; disabled?: boolean }>; tools: Record<string, { note?: string; disabled?: boolean }> }): string[] {
+/**
+ * The prompt block. One line per capability by default; for a server whose tools are cached and
+ * few enough to be worth carrying, the tool signatures come along.
+ *
+ * The threshold matters: a 186-tool server would put 16 kB in every context, which is the very
+ * thing this tool exists to avoid. Small servers are the opposite case — their whole surface fits
+ * in a few hundred bytes, and an agent that can SEE `search_code(query, repo?)` uses it, while one
+ * that only sees the server's name has to remember to ask.
+ */
+const INDEX_TOOL_LIMIT = 25;
+
+export function renderIndex(cfg: {
+  servers: Record<string, { note?: string; disabled?: boolean; indexTools?: boolean }>;
+  tools: Record<string, { note?: string; disabled?: boolean }>;
+}): string[] {
   const out: string[] = [];
   const servers = Object.entries(cfg.servers).filter(([, s]) => !s.disabled);
   const tools = Object.entries(cfg.tools).filter(([, t]) => !t.disabled);
   if (servers.length) {
     out.push("MCP tools via `mduct` CLI (list+args: mduct tools <server>; call: mduct call <server> <tool> key=value key:=<json>):");
-    for (const [name, s] of servers) out.push(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
+    for (const [name, s] of servers) {
+      out.push(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
+      const cached = readToolCache(name);
+      if (!cached?.length) continue;
+      const show = s.indexTools ?? cached.length <= INDEX_TOOL_LIMIT;
+      if (show) out.push(`      ${cached.map((t) => t.name + t.sig).join("  ")}`);
+      else out.push(`      ${cached.length} tools — mduct tools ${name}`);
+    }
   }
   if (tools.length) {
     out.push("CLI tools via `mduct` CLI (what it can do: mduct tools <tool>; run: mduct run <tool> [args…]):");

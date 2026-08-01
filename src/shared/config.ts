@@ -24,12 +24,20 @@ export type ServerCfg = {
   shadow?: ShadowRule[];
   /** In-flight calls allowed at once for this server. Default 1 (strictly serialised). */
   maxConcurrent?: number;
+  /** Force tool signatures in/out of the index block. Default: in, when the server has few enough. */
+  indexTools?: boolean;
   idleTtlMin?: number; note?: string; disabled?: boolean;
 };
 /** A CLI capability (playwright, kubectl, aws): invoked via `mduct run <name>` with its env/wrapping. */
 export type ToolCfg = {
   run: string; args?: string[]; env?: Record<string, string>;
   check?: string; setup?: string; note?: string; disabled?: boolean;
+  /**
+   * npm package the tool also exposes as a LIBRARY, e.g. "playwright@1.61.1". `mduct tool setup`
+   * installs it into the cache dir and `mduct env <tool>` exports a NODE_PATH pointing at it — so
+   * a script that needs the API, not the CLI, does not have to install anything of its own.
+   */
+  lib?: string;
 };
 /** Per-instance defaults applied to every call unless a flag overrides them. */
 export type Defaults = { compact?: boolean; warnAbove?: number };

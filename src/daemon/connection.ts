@@ -5,6 +5,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ServerCfg } from "../shared/config";
 import { guardAllows } from "./guard";
+import { toolSignature } from "../cli/format";
+import { writeToolCache } from "../shared/toolCache";
 import { FileOAuthProvider } from "./oauthProvider";
 
 /**
@@ -139,6 +141,8 @@ export class ServerConnection {
     const client = await this.ensure();
     const res = await client.listTools();
     this.tools = res.tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
+    // hand the index something to show without connecting — names and signatures only
+    writeToolCache(this.name, this.tools.map((t) => ({ name: t.name, sig: toolSignature(t.inputSchema) })));
     return this.tools;
   }
 

@@ -17,9 +17,10 @@ CALL & RUN
        [--timeout <s>] [--raw] [--json]       --raw = full envelope; --json = only the JSON payload (pipe-ready)
        [--compact] [--full]                   --compact minifies output; --full bypasses the oversized-list guard
   run <tool> [args …]                  run a CLI tool (kubectl/aws/…) with its stored env/wrapping
+  env <tool>                           its env as shell exports — eval "$(mduct env playwright)"
   tools <server>                       list a server's tools (compact — no schemas)
   schema <server> <tool>               full JSON schema of one tool
-  index                                the compact capability block (for prompts / hooks)
+  index [--refresh]                    the compact capability block (for prompts / hooks)
 
 SERVERS
   servers                              configured MCP servers + connection state
@@ -214,7 +215,19 @@ async function main(): Promise<number> {
     }
     case "index": {
       const { renderIndex } = await import("./cli/format");
-      for (const line of renderIndex(loadConfig())) console.log(line); // no daemon needed — works cold in hooks
+      const cfg = loadConfig();
+      if (argv.includes("--refresh")) {
+        // the index reads a cache the daemon fills as a side effect of use; --refresh fills it on
+        // purpose, for a fresh machine where nothing has been called yet
+        const { pruneToolCache } = await import("./shared/toolCache");
+        pruneToolCache(Object.keys(cfg.servers));
+        for (const name of Object.keys(cfg.servers)) {
+          if (cfg.servers[name]!.disabled) continue;
+          try { await daemonRequest("tools", { server: name }); }
+          catch (e) { console.error(`  (${name}: ${(e as Error).message.split("\n")[0]})`); }
+        }
+      }
+      for (const line of renderIndex(cfg)) console.log(line); // no daemon needed — works cold in hooks
       return 0;
     }
     case "run": {
@@ -294,6 +307,10 @@ async function main(): Promise<number> {
       return cmdSetDisabled(argv[0], cmd === "disable");
     }
     case "logs": console.log(((await daemonRequest("logs", { server: argv[0] })) as string[]).join("\n")); return 0;
+    case "env": {
+      const { cmdToolEnv } = await import("./cli/tool");
+      return cmdToolEnv(argv[0]);
+    }
     case "shadow": {
       // the only honest answer to "is the redirect worth its friction" is the log
       const { conversion, readEvents, logPath } = await import("./cli/shadow");
