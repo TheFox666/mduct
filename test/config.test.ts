@@ -39,6 +39,16 @@ describe("loadConfig", () => {
     expect(() => withCfg(`{"servers":{"bad":{}}}`)).toThrow(/bad.*command.*url/);
   });
 
+  test("rejects a server with BOTH command and url — a half-finished migration", () => {
+    // it used to load: the connection picks `command`, so the url was silently dead config and
+    // the file lied about which end you were talking to
+    expect(() => withCfg(`{"servers":{"half":{"command":"npx","url":"https://x/mcp"}}}`))
+      .toThrow(/half.*BOTH.*command.*url/);
+    // each on its own is still fine
+    expect(() => withCfg(`{"servers":{"a":{"command":"npx"}}}`)).not.toThrow();
+    expect(() => withCfg(`{"servers":{"b":{"url":"https://x/mcp"}}}`)).not.toThrow();
+  });
+
   test("a null / non-object server entry gives a clear error, not a TypeError (L4)", () => {
     expect(() => withCfg(`{"servers":{"foo":null}}`)).toThrow(/foo.*must be an object/);
     expect(() => withCfg(`{"servers":{"foo":"just a string"}}`)).toThrow(/foo.*must be an object/);

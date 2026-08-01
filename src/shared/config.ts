@@ -48,6 +48,10 @@ export function loadConfig(): Config {
     const s: ServerCfg = structuredClone(s0);
     if (!s.command && !s.url)
       throw new Error(`server "${name}": needs "command" (stdio) or "url" (http) — fix ${p}`);
+    // Both set is a half-finished migration, and it used to pass silently: the connection picks
+    // `command`, so the url is ignored and the config lies about which end you are talking to.
+    if (s.command && s.url)
+      throw new Error(`server "${name}": has BOTH "command" and "url" — a server is stdio or http, not both. Delete the one you stopped using — fix ${p}`);
     if (s.url) s.url = exp(s.url);
     s.args = s.args?.map(exp);
     for (const rec of [s.env, s.headers])
