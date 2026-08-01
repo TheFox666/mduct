@@ -33,11 +33,38 @@ export function ruleMatches(rule: ShadowRule, toolName: string, command: string,
   }
   if (!byTool && !byBash) return false;
   if (!rule.pathIn?.length) return true;
-  // The command may name its own target (`grep -rn x ~/dev/repo/app`), and a leading `cd` moves the
-  // call somewhere else entirely — a session cwd is NOT where the work happens. Found the hard way:
-  // with cwd alone, a grep into an UNindexed repo fired because the session sat in an indexed one.
-  const haystack = `${command}\n${effectiveCwd(command, cwd)}`;
-  return rule.pathIn.some((p) => haystack.includes(expandHome(p)));
+
+  const here = effectiveCwd(command, cwd);
+  const gates = rule.pathIn.map(expandHome);
+  const under = (p: string) => gates.some((g) => p === g || p.startsWith(g.endsWith("/") ? g : `${g}/`));
+
+  // What the command actually reads beats where the shell happens to stand. A session's cwd is
+  // usually a fixed project root, so gating on it alone fires for calls that reach somewhere else
+  // entirely (`grep -n x ~/.config/foo` while sitting in an indexed repo — a real false positive).
+  const targets = commandTargets(command, here);
+  if (targets.length) return targets.some(under);
+
+  // Nothing nameable to check (no path arguments, or none that exist): fall back to where it runs,
+  // plus a plain text match so a path that doesn't exist yet still counts.
+  return under(here) || gates.some((g) => command.includes(g));
+}
+
+/**
+ * Path arguments a command actually touches, resolved and filtered to those that EXIST.
+ *
+ * Existence is the trick that separates a target from a pattern: `grep -rn "a/b" app/` has two
+ * slash-bearing tokens and only one of them is a directory. Guessing by position or by quoting gets
+ * this wrong in both directions; asking the filesystem does not.
+ */
+export function commandTargets(command: string, cwd: string): string[] {
+  const out: string[] = [];
+  for (const raw of command.match(/("[^"]*"|'[^']*'|\S+)/g) ?? []) {
+    const t = raw.replace(/^["']|["']$/g, "");
+    if (t.startsWith("-") || !/[/~]/.test(t) || t.includes("*")) continue; // flags, non-paths, globs
+    const p = t.startsWith("~") || t.startsWith("/") ? expandHome(t) : join(cwd, t);
+    if (existsSync(p)) out.push(p);
+  }
+  return out;
 }
 
 /** Where the command actually runs: the last `cd <path>` it performs, else the session cwd. */

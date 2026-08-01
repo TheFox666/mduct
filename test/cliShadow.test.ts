@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { available, conversion, effectiveCwd, findHit, ruleMatches, shadowMatcher, type Event } from "../src/cli/shadow";
@@ -186,5 +186,55 @@ describe("available — the bucket", () => {
   test("a corrupt timestamp in the log is skipped, not counted as now", () => {
     const bad: Event = { ts: "nope", session: "s", kind: "nudge", server: "idx", rule: 0 };
     expect(avail([bad, nudge(min(0))], min(0))).toBe(1);
+  });
+});
+
+describe("pathIn gates on what the command touches, not where the shell stands", () => {
+  const root = mkdtempSync(join(tmpdir(), "mduct-paths-"));
+  const gate = join(root, "indexed");
+  const other = join(root, "elsewhere");
+  mkdirSync(join(gate, "app"), { recursive: true });
+  mkdirSync(other, { recursive: true });
+  writeFileSync(join(gate, "app", "x.ts"), "x");
+  writeFileSync(join(other, "notes.md"), "y");
+  const R = { bash: "grep", pathIn: [gate], hint: "h" };
+  const fires = (cmd: string, cwd: string) => ruleMatches(R, "Bash", cmd, cwd);
+
+  test("the live false positive: sitting in the gated repo, grepping somewhere else", () => {
+    expect(fires(`grep -n foo ${other}/notes.md`, gate)).toBe(false);
+  });
+
+  test("a relative target inside still fires", () => {
+    expect(fires("grep -rn foo app/", gate)).toBe(true);
+    expect(fires("grep -rn foo app/x.ts", gate)).toBe(true);
+  });
+
+  test("an absolute target inside fires from anywhere", () => {
+    expect(fires(`grep -rn foo ${gate}/app`, "/tmp")).toBe(true);
+  });
+
+  test("no path argument at all falls back to where it runs", () => {
+    expect(fires("grep -rn foo", gate)).toBe(true);
+    expect(fires("grep -rn foo", other)).toBe(false);
+  });
+
+  test("a slash in the search PATTERN is not mistaken for a target", () => {
+    // the pattern doesn't exist as a path; the real target decides
+    expect(fires(`grep -rn "a/b" app/`, gate)).toBe(true);
+    expect(fires(`grep -rn "a/b" ${other}/notes.md`, gate)).toBe(false);
+  });
+
+  test("globs are ignored rather than guessed at", () => {
+    expect(fires("grep -rn foo app/**/*.ts", gate)).toBe(true);   // falls back to cwd
+    expect(fires("grep -rn foo app/**/*.ts", other)).toBe(false);
+  });
+
+  test("a path that does not exist yet still counts via plain text", () => {
+    expect(fires(`grep -rn foo ${gate}/not/created/yet`, "/tmp")).toBe(true);
+  });
+
+  test("a cd still wins over the session cwd", () => {
+    expect(fires(`cd ${other} && grep -n foo notes.md`, gate)).toBe(false);
+    expect(fires(`cd ${gate} && grep -n foo app/x.ts`, other)).toBe(true);
   });
 });
