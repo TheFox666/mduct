@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,4 +55,50 @@ test("hook install patches settings idempotently; --remove reverts", async () =>
   expect(rm.code).toBe(0);
   const s2 = JSON.parse(readFileSync(settings, "utf8"));
   expect(s2.hooks?.SessionStart ?? []).toHaveLength(0);
+});
+
+describe("hook install also registers the MCP catalogue", () => {
+  const d = mkdtempSync(join(tmpdir(), "mduct-mcpreg-"));
+  const settings = join(d, "settings.json");
+  const claudeJson = join(d, ".claude.json");
+  const cfgPath = join(d, "servers.jsonc");
+  const base = { ...process.env, MDUCT_CONFIG: cfgPath, MDUCT_CLAUDE_MCP_CONFIG: claudeJson };
+  const write = (mcpCatalog: boolean) =>
+    writeFileSync(cfgPath, JSON.stringify({ servers: { kb: { command: "true", ...(mcpCatalog ? { mcpCatalog: true } : {}) } } }));
+  const install = async (...extra: string[]) => {
+    const p = Bun.spawn([process.execPath, "src/main.ts", "hook", "install", "claude", "--settings", settings, ...extra],
+      { env: base, stdout: "pipe", stderr: "pipe" });
+    const out = await new Response(p.stdout).text();
+    await p.exited;
+    return out;
+  };
+  const registered = () => {
+    const j = JSON.parse(readFileSync(claudeJson, "utf8")) as { mcpServers?: Record<string, { args?: string[] }> };
+    return j.mcpServers?.mduct;
+  };
+
+  test("a config with mcpCatalog gets the server registered, in the right file", async () => {
+    writeFileSync(claudeJson, JSON.stringify({ existingKey: "must survive", mcpServers: { other: { command: "x" } } }));
+    write(true);
+    const out = await install();
+    expect(out).toContain("registered the mduct MCP catalogue");
+    // compiled binary → ["mcp"]; from source → [".../main.ts", "mcp"]. The invariant is the verb.
+    expect(registered()!.args!.at(-1)).toBe("mcp");
+    const j = JSON.parse(readFileSync(claudeJson, "utf8"));
+    expect(j.existingKey).toBe("must survive");   // Claude's own config is not ours to rewrite
+    expect(j.mcpServers.other).toBeDefined();     // nor anyone else's server
+  }, 30_000);
+
+  test("--remove takes it back out and leaves the rest alone", async () => {
+    const out = await install("--remove");
+    expect(out).toContain("removed the mduct MCP catalogue");
+    expect(registered()).toBeUndefined();
+    expect(JSON.parse(readFileSync(claudeJson, "utf8")).mcpServers.other).toBeDefined();
+  }, 30_000);
+
+  test("no server opted in → nothing is registered at all", async () => {
+    write(false);
+    await install();
+    expect(registered()).toBeUndefined();
+  }, 30_000);
 });

@@ -248,13 +248,18 @@ Calls stay in the shell, because the shell is the part worth keeping: `--json |
 jq`, redirection, loops. Running results back through MCP would hand every
 payload straight into the context.
 
-```sh
-claude mcp add mduct -- mduct mcp     # register the catalogue
+```jsonc
+"kb": { "command": "…", "mcpCatalog": true }   // opt in, per server
 ```
 
-```jsonc
-"hive": { "command": "…", "mcpCatalog": true }   // opt in, per server
+```sh
+mduct hook install claude              # registers the catalogue too
 ```
+
+Hooks live in `settings.json` and MCP servers in `.claude.json`, so the install
+touches both — leaving the second to you is an install that half-works and a
+catalogue nobody sees. `--remove` takes it back out, and session start says so
+if a server declares `mcpCatalog` while the server is not registered.
 
 ### Which servers to mirror
 

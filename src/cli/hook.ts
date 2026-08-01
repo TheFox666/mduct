@@ -17,6 +17,60 @@ function selfBin(): string {
   return entry.startsWith("/$bunfs") || entry === "" ? process.execPath : `${process.execPath} ${entry}`;
 }
 
+/** Same resolution, split for a place that wants command and args separately (MCP registration). */
+function selfExec(extra: string[]): { command: string; args: string[] } {
+  const entry = process.argv[1] ?? "";
+  return entry.startsWith("/$bunfs") || entry === ""
+    ? { command: process.execPath, args: extra }
+    : { command: process.execPath, args: [entry, ...extra] };
+}
+
+/** Claude reads user-scope MCP servers from ~/.claude.json — a different file from settings.json. */
+function mcpConfigPath(): string {
+  return process.env.MDUCT_CLAUDE_MCP_CONFIG ?? join(homedir(), ".claude.json");
+}
+
+function catalogueWanted(): boolean {
+  try { return Object.values(loadConfig().servers).some((s) => s.mcpCatalog && !s.disabled); }
+  catch { return false; }
+}
+
+function mcpRegistered(): boolean {
+  try {
+    const j = JSON.parse(readFileSync(mcpConfigPath(), "utf8")) as { mcpServers?: Record<string, unknown> };
+    return !!j.mcpServers?.mduct;
+  } catch { return false; }
+}
+
+/**
+ * Register (or drop) the catalogue server alongside the hooks.
+ *
+ * Two files, one install: hooks go to settings.json, MCP servers to .claude.json. Leaving the
+ * second to the user means an install that half-works and a catalogue nobody sees.
+ */
+function syncMcpRegistration(remove: boolean): string | null {
+  const p = mcpConfigPath();
+  let j: { mcpServers?: Record<string, unknown> } & Record<string, unknown> = {};
+  if (existsSync(p)) {
+    try { j = JSON.parse(readFileSync(p, "utf8")) as typeof j; }
+    catch { return `⚠ ${p} is not readable JSON — register manually: claude mcp add mduct -- mduct mcp`; }
+  }
+  const had = !!j.mcpServers?.mduct;
+  if (remove || !catalogueWanted()) {
+    if (!had) return null;
+    delete j.mcpServers!.mduct;
+  } else {
+    const { command, args } = selfExec(["mcp"]);
+    j.mcpServers = { ...(j.mcpServers ?? {}), mduct: { type: "stdio", command, args, env: {} } };
+  }
+  const tmp = `${p}.${process.pid}.tmp`; // atomic: never corrupt Claude's own config
+  writeFileSync(tmp, JSON.stringify(j, null, 2) + "\n");
+  renameSync(tmp, p);
+  return remove || !catalogueWanted()
+    ? `removed the mduct MCP catalogue from ${p}`
+    : `registered the mduct MCP catalogue in ${p}`;
+}
+
 export function hookRunSessionStart(): number {
   let cfg;
   try { cfg = loadConfig(); } catch (e) {
@@ -27,6 +81,9 @@ export function hookRunSessionStart(): number {
   for (const line of renderIndex(cfg)) console.log(line);
   // Shadow rules only fire if the installed PreToolUse matcher covers their tools. Editing the
   // config can't reach settings.json, so the drift is checked HERE instead of being a silent no-op.
+  // same drift check for the catalogue: declared in servers.jsonc, registered in .claude.json
+  if (catalogueWanted() && !mcpRegistered())
+    console.log("⚠ mduct: a server declares mcpCatalog, but the mduct MCP server is not registered — run `mduct hook install claude` once.");
   const needed = shadowMatcher(cfg);
   if (needed && !installedMatcherCovers(needed))
     console.log(`⚠ mduct: Shadow-Regeln deklariert, aber der PreToolUse-Matcher deckt sie nicht (${needed}) — \`mduct hook install claude\` einmal neu laufen lassen.`);
@@ -171,6 +228,8 @@ export function hookInstall(argv: string[]): number {
   writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n");
   renameSync(tmp, settingsPath);
   console.log(`${remove ? "removed from" : "installed into"}: ${settingsPath}`);
+  const mcp = syncMcpRegistration(remove);
+  if (mcp) console.log(mcp);
   if (!remove) console.log("Hinweis: wirkt ab der nächsten Claude-Session.");
   return 0;
 }
