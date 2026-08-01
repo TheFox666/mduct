@@ -70,11 +70,19 @@ agent will not use a capability it cannot see.
 ## Install
 
 ```sh
+brew install thefox666/tap/mduct
+```
+
+Or without Homebrew — fetches the release binary, checks its sha256, puts
+`mduct` in `~/.local/bin`:
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/TheFox666/mduct/main/install.sh | sh
 ```
 
-Fetches the release binary, checks its sha256, puts `mduct` in `~/.local/bin`.
-From a checkout: `bun run build && cp dist/mduct ~/.local/bin/`.
+`ubi --project TheFox666/mduct` and `mise use -g ubi:TheFox666/mduct` work too,
+straight off the GitHub releases. From a checkout: `bun run build && cp
+dist/mduct ~/.local/bin/`.
 
 ## Quickstart
 
