@@ -61,7 +61,7 @@ PIPING (keep big outputs OUT of your context — lossless)
   --json emits ONLY the JSON payload (prose stripped), so \`| jq\` works on any
   server; only the filtered result lands in your context, the full blob never does.
   (--json also bypasses the oversized-list guard, since you're slimming it yourself.)
-    # 20 issues as a few fields each, not full bodies (measured: ~13.7k → ~1.1k chars):
+    # 20 issues as a few fields each, not full bodies (measured: 24.5k → 1.8k chars):
     mduct call linear-server list_issues limit=20 --json | jq -c '.issues|map({id,title,status})'
     # GitLab prefixes prose ("Found N …") — --json strips it so this still pipes clean:
     mduct call gitlab list_merge_requests project_id=grp/proj state=opened --json | jq -c 'map({iid,title,web_url})'

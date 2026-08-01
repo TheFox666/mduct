@@ -1,6 +1,4 @@
-# mduct
-
-*because it glues shit together*
+<p align="center"><img src="docs/banner.png" alt="mduct — because it glues shit together" width="100%"></p>
 
 One binary. Any number of MCP servers and plain CLIs behind a single command,
 with none of their tool schemas anywhere near your model's context.
@@ -16,9 +14,9 @@ That's the whole idea. It is a duct. Things go through it.
 ## Why
 
 An MCP client loads every connected server's tool schemas up front, all of
-them. One GitLab server is around 120 tools. Connect three servers and you have
-spent a five-figure token count before the model has read your question, and
-you pay it again on every context refresh, mostly for tools nobody calls.
+them. Measured on one GitLab server: 186 tools, about 168 kB of JSON Schema.
+That is roughly 40k tokens spent before the model has read your question, paid
+again on every context refresh, mostly for tools nobody calls.
 
 mduct puts one line per server in the prompt and leaves the schemas on disk
 until something actually calls a tool:
@@ -29,8 +27,8 @@ MCP tools via `mduct` (list: mduct tools <server>; call: mduct call <server> <to
   kubectl      — read-only cluster access
 ```
 
-Roughly 80 tokens against roughly 40k. The tool stays discoverable. It just
-stops being expensive.
+One line is about 20 tokens. A full index of seven servers and three CLI tools
+measures 789 bytes. The tool stays discoverable, it just stops being expensive.
 
 That last part is why the index exists at all instead of loading schemas lazily.
 Lazy loading fixes the token bill and introduces a worse problem: out of
