@@ -256,12 +256,19 @@ claude mcp add mduct -- mduct mcp     # register the catalogue
 "hive": { "command": "…", "mcpCatalog": true }   // opt in, per server
 ```
 
-Opt-in matters: a catalogue entry costs roughly six times the prose line for the
-same tool. Measured on one setup — hive's 15 tools are 2.5 kB as a catalogue
-against 0.75 kB as signatures in the index; GitLab's 189 would be 29 kB. Mirror
-the one or two servers an agent keeps walking past, not everything. A server in
-the catalogue drops its signatures from the prompt block, so you never pay for
-both.
+### Which servers to mirror
+
+Not the ones you talk about. "Look at the GitLab MR" or "file a Linear ticket"
+names the server, and the request drags the tool in by itself. The ones worth
+the namespace are the servers **no request ever names** — a code index, a
+knowledge base, anything an agent is supposed to reach for on its own initiative
+while doing something else. That is exactly where a prose line loses to habit.
+
+Cost keeps the list short: a catalogue entry runs about six times the prose line
+for the same tool. Measured on one setup — 15 tools are 2.5 kB as a catalogue
+against 0.75 kB as signatures in the index; a 189-tool server would be 29 kB. A
+catalogued server drops its signatures from the prompt block, so you never pay
+for both.
 
 ## Shadowing
 
