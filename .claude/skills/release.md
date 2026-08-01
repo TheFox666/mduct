@@ -75,12 +75,14 @@ The workflow refuses to publish when the tag and `package.json` disagree, or
 when `notes/<tag>.md` is missing — both are mistakes that are easier to catch
 before a release exists than after.
 
-It then builds the four targets, writes the checksums, creates the release,
-installs the published binary the way a user would and exercises it, and
-regenerates the Homebrew formula. The tap push needs a fine-grained PAT with
-`contents:write` on `TheFox666/homebrew-tap`, stored as the `TAP_TOKEN` secret;
-without it the release still happens and the run warns that brew is a version
-behind.
+It then builds the four targets, writes the checksums, creates the release, and
+installs the published binary the way a user would to exercise it.
+
+The Homebrew formula is not updated from here. `TheFox666/homebrew-tap` has its
+own workflow that reads the public releases and writes to itself, so it needs no
+token — a cross-repo push would have needed a PAT, and an expired PAT shows up
+as brew silently serving an old version. It polls every six hours; press
+`workflow_dispatch` in the tap if you want it immediately.
 
 Doing it by hand is still fine — the commands are in
 `.github/workflows/release.yml` and they are the same ones. The only part that
@@ -123,5 +125,4 @@ day to day, wrong when you want to be sure the release works.
 
 ## After publishing
 
-- `bun run formula`, then commit and push the tap.
 - Install the published binary over the local one, so what you run is what users get.

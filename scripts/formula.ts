@@ -11,7 +11,18 @@
  */
 import { $ } from "bun";
 
-const version = (process.argv[2] ?? (await Bun.file("package.json").json()).version).replace(/^v/, "");
+/** Explicit arg, else the latest published release, else package.json. The published release is the
+ *  right default: the formula describes what people can download, not what happens to be checked out. */
+async function resolveVersion(): Promise<string> {
+  if (process.argv[2]) return process.argv[2].replace(/^v/, "");
+  const res = await fetch("https://api.github.com/repos/TheFox666/mduct/releases/latest", {
+    headers: { "user-agent": "mduct-formula" },
+  });
+  if (res.ok) return ((await res.json()) as { tag_name: string }).tag_name.replace(/^v/, "");
+  return (await Bun.file("package.json").json()).version;
+}
+
+const version = await resolveVersion();
 const tag = `v${version}`;
 const base = `https://github.com/TheFox666/mduct/releases/download/${tag}`;
 const targets = [

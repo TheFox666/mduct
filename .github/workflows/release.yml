@@ -76,19 +76,7 @@ jobs:
           MDUCT_CONFIG="$D/bad.jsonc" MDUCT_SOCKET="$D/b.sock" "$B" servers 2>&1 | grep -q "does not load"
           MDUCT_SOCKET="$D/s.sock" "$B" daemon --stop || true
 
-      - name: update the Homebrew tap
-        env:
-          # fine-grained PAT with contents:write on TheFox666/homebrew-tap.
-          # The default token cannot write to another repository.
-          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
-        run: |
-          if [ -z "$TAP_TOKEN" ]; then
-            echo "::warning::TAP_TOKEN not set — formula not updated, brew still serves the previous version"
-            exit 0
-          fi
-          git clone --depth 1 "https://x-access-token:$TAP_TOKEN@github.com/TheFox666/homebrew-tap.git" "$RUNNER_TEMP/tap"
-          MDUCT_TAP="$RUNNER_TEMP/tap" bun run formula "$GITHUB_REF_NAME"
-          cd "$RUNNER_TEMP/tap"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "mduct ${GITHUB_REF_NAME#v}" && git push
+      # The tap is not updated from here. A cross-repo push needs a PAT that expires,
+      # and its expiry shows up as brew quietly serving an old version. The tap has its
+      # own workflow instead: it reads the public releases and writes to itself, which
+      # needs no credentials at all. It polls every six hours, or on one button press.
