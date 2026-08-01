@@ -191,6 +191,11 @@ async function main(): Promise<number> {
     }
     case "tools": {
       const { toolSignature } = await import("./cli/format");
+      // a CLI tool is a capability too — `mduct tools <name>` must answer for both kinds
+      if (argv[0] && !loadConfig().servers[argv[0]]) {
+        const { cmdToolHelp } = await import("./cli/tool");
+        if ((await cmdToolHelp(argv[0])) === 0) return 0;
+      }
       const tools = (await daemonRequest("tools", { server: argv[0] })) as { name: string; description?: string; inputSchema?: unknown }[];
       // name + arg signature up front so you see calls AND args without a separate `mduct schema`
       for (const t of tools) console.log(`${(t.name + toolSignature(t.inputSchema)).padEnd(34)} — ${(t.description ?? "").split("\n")[0]}`);

@@ -27,7 +27,11 @@ export async function startDaemon(opts: { standalone?: boolean } = {}): Promise<
     const cfg = config.servers[name];
     if (!cfg || cfg.disabled) {
       const known = Object.keys(config.servers).join(", ") || "(none)";
-      throw new Error(`unknown server "${name}" — configured: ${known} (config: ${configPath()})`);
+      // name the CLI tools too: they are capabilities in the same index and the same namespace,
+      // so "unknown server" alone sends people looking for a server that was never one
+      const cli = Object.keys(config.tools ?? {});
+      const alsoTools = cli.length ? ` · CLI tools (mduct run <name>): ${cli.join(", ")}` : "";
+      throw new Error(`unknown server "${name}" — configured: ${known}${alsoTools} (config: ${configPath()})`);
     }
     let c = conns.get(name);
     if (!c) { c = new ServerConnection(name, cfg); conns.set(name, c); }

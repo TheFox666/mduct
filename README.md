@@ -151,9 +151,14 @@ plain CLIs, plus `defaults`.
 ```
 
 ```sh
+mduct tools kubectl                      # what it can do — the tool's own help, through its wrapper
 mduct run kubectl get pods -n default    # with the tool's env/wrapping applied
 mduct tool status                        # installed / missing, + update hints for pinned npm tools
 ```
+
+`mduct tools <name>` answers for both kinds. For an MCP server it lists tool
+signatures; for a CLI tool it runs that tool's help. Otherwise the only way to
+discover a CLI tool's surface is to already know it.
 
 Every field with its default: [Configuration](../../wiki/Configuration).
 

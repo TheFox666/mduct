@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -50,4 +50,36 @@ test("index includes CLI tools alongside servers", async () => {
   const r = await mduct("index");
   expect(r.out).toContain("say");
   expect(r.out).toContain("mduct run"); // tells the agent how to invoke them
+});
+
+describe("mduct tools <cliTool> — discovery for the non-MCP half", () => {
+  const d = mkdtempSync(join(tmpdir(), "mduct-cli-help-"));
+  const cfg = join(d, "servers.jsonc");
+  writeFileSync(cfg, JSON.stringify({
+    servers: { srv: { command: "true" } },
+    // `echo --help` prints "--help" and exits 0: enough to prove the wrapper ran the right binary
+    tools: { fake: { run: "echo", args: ["SUBCOMMANDS:"], note: "a pretend tool" } },
+  }));
+  const env = { ...process.env, MDUCT_CONFIG: cfg, MDUCT_SOCKET: join(d, "s.sock") };
+  const run = async (...argv: string[]) => {
+    const p = Bun.spawn([process.execPath, "src/main.ts", ...argv], { env, stdout: "pipe", stderr: "pipe" });
+    const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+    await p.exited;
+    return { out, err };
+  };
+
+  test("a CLI tool answers with its own help instead of 'unknown server'", async () => {
+    const { out, err } = await run("tools", "fake");
+    expect(err).toContain("a pretend tool");          // the note, so you know what it is
+    expect(err).toContain("mduct run fake");          // and how to call it
+    expect(out).toContain("SUBCOMMANDS:");            // the tool's own output, through its wrapper
+    expect(err).not.toContain("unknown server");
+  }, 30_000);
+
+  test("a name that is neither names both kinds, not just servers", async () => {
+    const { err } = await run("tools", "nope");
+    expect(err).toContain("unknown server");
+    expect(err).toContain("srv");                     // the servers
+    expect(err).toContain("fake");                    // ...and the CLI tools it would otherwise hide
+  }, 30_000);
 });

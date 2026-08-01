@@ -205,7 +205,7 @@ export function renderIndex(cfg: { servers: Record<string, { note?: string; disa
     for (const [name, s] of servers) out.push(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
   }
   if (tools.length) {
-    out.push("CLI tools via `mduct` CLI (run: mduct run <tool> [args…]):");
+    out.push("CLI tools via `mduct` CLI (what it can do: mduct tools <tool>; run: mduct run <tool> [args…]):");
     for (const [name, t] of tools) out.push(`  ${name.padEnd(12)} — ${t.note ?? "CLI tool"}`);
   }
   return out;

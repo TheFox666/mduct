@@ -25,6 +25,25 @@ export async function cmdRun(argv: string[]): Promise<number> {
   return await proc.exited;
 }
 
+/**
+ * `mduct tools <cliTool>` — the CLI-tool half of discovery.
+ *
+ * For an MCP server, `mduct tools` answers "what can this do". For a CLI tool it used to answer
+ * `unknown server "playwright"`, so the only way to find out was to already know that
+ * `mduct run <tool> --help` exists. A capability nobody can enumerate is a capability nobody uses.
+ */
+export async function cmdToolHelp(name: string): Promise<number> {
+  const t = known()[name];
+  if (!t || t.disabled) return 1; // caller falls back to its own error
+  console.error(`# ${name} — ${t.note ?? "CLI tool"} (run: mduct run ${name} …)`);
+  const proc = Bun.spawn([t.run, ...(t.args ?? []), "--help"], {
+    stdout: "inherit", stderr: "inherit", env: { ...process.env, ...t.env },
+  });
+  const code = await proc.exited;
+  if (code !== 0) console.error(`(\`${t.run} --help\` exited ${code} — try: mduct run ${name} help)`);
+  return 0;
+}
+
 /** Run a tool's `check` quietly; true if it exits 0. */
 async function isInstalled(t: ToolCfg): Promise<boolean> {
   if (!t.check) return true; // no check defined → assume present
