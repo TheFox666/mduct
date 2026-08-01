@@ -1,3 +1,5 @@
+[![ci](https://github.com/TheFox666/mduct/actions/workflows/ci.yml/badge.svg)](https://github.com/TheFox666/mduct/actions/workflows/ci.yml)
+
 <p align="center"><img src="docs/banner.png" alt="mduct — because it glues shit together" width="100%"></p>
 
 One binary that turns any MCP server into a Unix tool — pipeable, scriptable,

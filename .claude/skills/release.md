@@ -56,39 +56,36 @@ the other way around.
 
 ## Steps
 
-```sh
-# 1. version, then the four targets + checksums
-#    (dist/ is gitignored — the binaries only exist as release assets)
-$EDITOR package.json                       # "version": "0.5.0"
-bun run release
-cd dist && for f in mduct-linux-x64 mduct-linux-arm64 mduct-darwin-x64 mduct-darwin-arm64; do
-  sha256sum "$f" > "$f.sha256"
-done && cd ..
-
-# 2. commit, tag, push both
-git commit -am "chore: bump version to 0.5.0"
-git tag -a v0.5.0 -m "v0.5.0 — <the one-line reason>"
-git push origin main && git push origin v0.5.0
-
-# 3. publish with the notes from a file
-gh release create v0.5.0 --title "v0.5.0 — <same one-liner>" --notes-file notes.md \
-  dist/mduct-linux-x64{,.sha256} dist/mduct-linux-arm64{,.sha256} \
-  dist/mduct-darwin-x64{,.sha256} dist/mduct-darwin-arm64{,.sha256}
-```
-
-## Homebrew tap
-
-The formula points at release assets, so it can only be regenerated once the
-release exists — after `gh release create`, never before:
+CI does the mechanical half. You do the two parts that are decisions:
 
 ```sh
-bun run formula                    # reads the published .sha256 files, writes ~/dev/homebrew-tap
-cd ~/dev/homebrew-tap && git commit -am "mduct 0.5.1" && git push
+# 1. version — the bump follows the changes, see above
+$EDITOR package.json
+
+# 2. notes — first line is the release title, then a blank line, then the sections
+$EDITOR notes/v0.5.2.md
+
+# 3. tag and push. Everything after this is .github/workflows/release.yml
+git commit -am "chore: bump version to 0.5.2"
+git tag -a v0.5.2 -m "v0.5.2 — <the one-line reason>"
+git push origin main && git push origin v0.5.2
 ```
 
-It fetches the checksums from GitHub rather than from `dist/`, so a formula can
-never describe a build that was not published. Forgetting this step leaves
-`brew install thefox666/tap/mduct` on the previous version, silently.
+The workflow refuses to publish when the tag and `package.json` disagree, or
+when `notes/<tag>.md` is missing — both are mistakes that are easier to catch
+before a release exists than after.
+
+It then builds the four targets, writes the checksums, creates the release,
+installs the published binary the way a user would and exercises it, and
+regenerates the Homebrew formula. The tap push needs a fine-grained PAT with
+`contents:write` on `TheFox666/homebrew-tap`, stored as the `TAP_TOKEN` secret;
+without it the release still happens and the run warns that brew is a version
+behind.
+
+Doing it by hand is still fine — the commands are in
+`.github/workflows/release.yml` and they are the same ones. The only part that
+is genuinely easier in CI is the install check, because the runner has no daemon
+of its own.
 
 ## Verify the published artefact, not the local one
 

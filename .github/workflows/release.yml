@@ -1,0 +1,94 @@
+name: release
+
+# Human decisions stay human: you bump the version, you write the notes, you push
+# the tag. Everything mechanical after that happens here — build, checksums,
+# release, a real install check, and the Homebrew formula.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: tag and package.json must agree
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(bun -e 'console.log((await Bun.file("package.json").json()).version)')"
+          [ "$tag" = "$pkg" ] || { echo "tag v$tag vs package.json $pkg — bump one of them"; exit 1; }
+
+      - name: notes must exist
+        run: |
+          f="notes/${GITHUB_REF_NAME}.md"
+          [ -s "$f" ] || { echo "missing $f — release notes are written by hand, see .claude/skills/release.md"; exit 1; }
+          # line 1 is the release title, line 2 is blank, the rest is the body
+          [ -n "$(head -1 "$f")" ] || { echo "$f: first line must be the release title"; exit 1; }
+          case "$(head -1 "$f")" in "#"*|"-"*) echo "$f: first line is the title, not a heading or a bullet"; exit 1;; esac
+
+      - run: bun install --frozen-lockfile
+      - run: bunx tsc --noEmit
+      - run: bun test
+
+      - name: build all four targets
+        run: |
+          bun run release
+          cd dist
+          for f in mduct-linux-x64 mduct-linux-arm64 mduct-darwin-x64 mduct-darwin-arm64; do
+            sha256sum "$f" > "$f.sha256"
+          done
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          f="notes/${GITHUB_REF_NAME}.md"
+          tail -n +3 "$f" > "$RUNNER_TEMP/body.md"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME — $(head -1 "$f")" \
+            --notes-file "$RUNNER_TEMP/body.md" \
+            dist/mduct-linux-x64 dist/mduct-linux-x64.sha256 \
+            dist/mduct-linux-arm64 dist/mduct-linux-arm64.sha256 \
+            dist/mduct-darwin-x64 dist/mduct-darwin-x64.sha256 \
+            dist/mduct-darwin-arm64 dist/mduct-darwin-arm64.sha256
+
+      # What people actually download, fetched the way they fetch it. The runner is
+      # a clean machine with no daemon of its own, which is the one thing that made
+      # this check unreliable by hand.
+      - name: install it the way a user would
+        run: |
+          MDUCT_BIN_DIR="$RUNNER_TEMP/bin" sh -c \
+            'curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | sh'
+          B="$RUNNER_TEMP/bin/mduct"
+          "$B" help | grep -q mduct
+          D="$RUNNER_TEMP/probe"; mkdir -p "$D"
+          echo '{"servers":{"kb":{"command":"true"}},"tools":{"t":{"run":"echo","note":"x"}}}' > "$D/c.jsonc"
+          MDUCT_CONFIG="$D/c.jsonc" MDUCT_SOCKET="$D/s.sock" MDUCT_CACHE="$D/cache" "$B" servers | grep -q kb
+          MDUCT_CONFIG="$D/c.jsonc" MDUCT_SOCKET="$D/s.sock" MDUCT_CACHE="$D/cache" "$B" index | grep -q "CLI tools"
+          echo '{"servers":{"half":{"command":"true","url":"https://x"}}}' > "$D/bad.jsonc"
+          MDUCT_CONFIG="$D/bad.jsonc" MDUCT_SOCKET="$D/b.sock" "$B" servers 2>&1 | grep -q "does not load"
+          MDUCT_SOCKET="$D/s.sock" "$B" daemon --stop || true
+
+      - name: update the Homebrew tap
+        env:
+          # fine-grained PAT with contents:write on TheFox666/homebrew-tap.
+          # The default token cannot write to another repository.
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::TAP_TOKEN not set — formula not updated, brew still serves the previous version"
+            exit 0
+          fi
+          git clone --depth 1 "https://x-access-token:$TAP_TOKEN@github.com/TheFox666/homebrew-tap.git" "$RUNNER_TEMP/tap"
+          MDUCT_TAP="$RUNNER_TEMP/tap" bun run formula "$GITHUB_REF_NAME"
+          cd "$RUNNER_TEMP/tap"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "mduct ${GITHUB_REF_NAME#v}" && git push
