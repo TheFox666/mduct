@@ -9,11 +9,11 @@ let stops: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const s of stops) await s().catch(() => {}); stops = []; });
 
 function bootEnv(): string {
-  const dir = mkdtempSync(join(tmpdir(), "mux-"));
-  process.env.MCPMUX_CONFIG = join(dir, "servers.jsonc");
-  process.env.MCPMUX_SOCKET = join(dir, "d.sock");
-  writeFileSync(process.env.MCPMUX_CONFIG, `{"servers":{"fix":{"command":"${process.execPath}","args":["test/fixture-server.ts"]}}}`);
-  return process.env.MCPMUX_SOCKET;
+  const dir = mkdtempSync(join(tmpdir(), "mduct-"));
+  process.env.MDUCT_CONFIG = join(dir, "servers.jsonc");
+  process.env.MDUCT_SOCKET = join(dir, "d.sock");
+  writeFileSync(process.env.MDUCT_CONFIG, `{"servers":{"fix":{"command":"${process.execPath}","args":["test/fixture-server.ts"]}}}`);
+  return process.env.MDUCT_SOCKET;
 }
 
 test("second startDaemon over a live daemon refuses instead of hijacking the socket (#15)", async () => {

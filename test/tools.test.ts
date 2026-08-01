@@ -6,10 +6,10 @@ import { loadConfig } from "../src/shared/config";
 
 let cfgPath: string;
 beforeEach(() => {
-  const dir = mkdtempSync(join(tmpdir(), "mux-"));
+  const dir = mkdtempSync(join(tmpdir(), "mduct-"));
   cfgPath = join(dir, "servers.jsonc");
-  process.env.MCPMUX_CONFIG = cfgPath;
-  process.env.MCPMUX_SECRETS = join(dir, "secrets.json");
+  process.env.MDUCT_CONFIG = cfgPath;
+  process.env.MDUCT_SECRETS = join(dir, "secrets.json");
 });
 
 describe("loadConfig tools section", () => {

@@ -12,12 +12,12 @@ const fixtureLine = (name: string) =>
   `"${name}":{"command":"${process.execPath}","args":["test/fixture-server.ts"]}`;
 
 async function boot(initial: string): Promise<{ sock: string; cfg: string }> {
-  const dir = mkdtempSync(join(tmpdir(), "mux-"));
+  const dir = mkdtempSync(join(tmpdir(), "mduct-"));
   const cfg = join(dir, "servers.jsonc");
   const sock = join(dir, "d.sock");
   writeFileSync(cfg, initial);
-  process.env.MCPMUX_CONFIG = cfg;
-  process.env.MCPMUX_SOCKET = sock;
+  process.env.MDUCT_CONFIG = cfg;
+  process.env.MDUCT_SOCKET = sock;
   const d = await startDaemon();
   stop = d.stop;
   return { sock, cfg };
@@ -41,15 +41,15 @@ test("a server added after boot becomes usable without restart (#6b)", async () 
 });
 
 test("boot with NO config file, then first add works (#6b)", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "mux-"));
+  const dir = mkdtempSync(join(tmpdir(), "mduct-"));
   const cfg = join(dir, "servers.jsonc");
-  process.env.MCPMUX_CONFIG = cfg;
-  process.env.MCPMUX_SOCKET = join(dir, "d.sock");
+  process.env.MDUCT_CONFIG = cfg;
+  process.env.MDUCT_SOCKET = join(dir, "d.sock");
   const d = await startDaemon(); // no file exists yet
   stop = d.stop;
   writeFileSync(cfg, `{"servers":{${fixtureLine("a")}}}`);
   const ok = await waitFor(async () => {
-    try { await request(process.env.MCPMUX_SOCKET!, "tools", { server: "a" }); return true; } catch { return false; }
+    try { await request(process.env.MDUCT_SOCKET!, "tools", { server: "a" }); return true; } catch { return false; }
   });
   expect(ok).toBe(true);
 });

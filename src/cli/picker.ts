@@ -38,11 +38,11 @@ const A = {
   invBlue: "\x1b[30;46m",
 };
 
-/** Interactive `mux add` (TTY, no args): a raw-mode TUI to install registry servers / remove installed ones. */
+/** Interactive `mduct add` (TTY, no args): a raw-mode TUI to install registry servers / remove installed ones. */
 export async function runPicker(): Promise<number> {
   const stdin = process.stdin;
   if (!stdin.isTTY) {
-    console.error("mux add needs an argument (non-interactive): mux add <name> -- <cmd> | mux add <ref> | mux add <name> --tool -- <cmd>");
+    console.error("mduct add needs an argument (non-interactive): mduct add <name> -- <cmd> | mduct add <ref> | mduct add <name> --tool -- <cmd>");
     return 1;
   }
 
@@ -59,7 +59,7 @@ export async function runPicker(): Promise<number> {
     if (cursor >= rows.length) cursor = Math.max(0, rows.length - 1);
     const lines: string[] = [
       "",
-      `  ${A.bold}${A.magenta}mcpmux${A.reset}${A.bold} · add servers${A.reset}`,
+      `  ${A.bold}${A.magenta}mduct${A.reset}${A.bold} · add servers${A.reset}`,
       "",
     ];
     if (rows.length === 0) {

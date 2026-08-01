@@ -2,8 +2,8 @@ import { discoverClaudeSources } from "../shared/claudeConfigs";
 import { addServer, externalizeSecrets } from "../shared/configEdit";
 
 /**
- * `mux import` — list candidates from all Claude configs (source\tname\tkind).
- * `mux import <name…> [--as <newname>] [--replace] [--source <path>]` — copy into mux config.
+ * `mduct import` — list candidates from all Claude configs (source\tname\tkind).
+ * `mduct import <name…> [--as <newname>] [--replace] [--source <path>]` — copy into mduct config.
  */
 export function cmdImport(argv: string[]): number {
   const take = (flag: string): string | undefined => {
@@ -18,7 +18,7 @@ export function cmdImport(argv: string[]): number {
   const as = take("--as");
   const sourceFilter = take("--source");
 
-  const home = process.env.MCPMUX_HOME; // test seam; defaults to real home
+  const home = process.env.MDUCT_HOME; // test seam; defaults to real home
   let sources = discoverClaudeSources(home ? { home } : {});
   if (sourceFilter) sources = sources.filter((s) => s.source.includes(sourceFilter));
 

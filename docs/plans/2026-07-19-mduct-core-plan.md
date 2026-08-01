@@ -1,19 +1,19 @@
-# mcpmux Core Implementation Plan (Plan 1 of 2)
+# mduct Core Implementation Plan (Plan 1 of 2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A working `mux` CLI + daemon that calls tools on any configured MCP server (stdio + HTTP) with zero schemas in model context.
+**Goal:** A working `mduct` CLI + daemon that calls tools on any configured MCP server (stdio + HTTP) with zero schemas in model context.
 
-**Architecture:** One TypeScript/bun binary with two roles: a daemon holding persistent MCP client connections (lazy connect, idle TTL, per-server queue, guard) reachable over a Unix socket, and thin CLI subcommands that autostart the daemon. Spec: `docs/specs/2026-07-19-mcpmux-design.md`.
+**Architecture:** One TypeScript/bun binary with two roles: a daemon holding persistent MCP client connections (lazy connect, idle TTL, per-server queue, guard) reachable over a Unix socket, and thin CLI subcommands that autostart the daemon. Spec: `docs/specs/2026-07-19-mduct-design.md`.
 
 **Tech Stack:** bun (runtime, test runner, `bun build --compile`), `@modelcontextprotocol/sdk` (client + fixture server), `zod` (fixture tool schemas; already an sdk dependency).
 
 ## Global Constraints
 
-- Repo root: `~/dev/mcpmux`. All paths below are repo-relative.
+- Repo root: `~/dev/mduct`. All paths below are repo-relative.
 - No dependencies beyond `@modelcontextprotocol/sdk` and `zod`. No CLI framework — hand-rolled argv parsing.
 - Every error message names the next action (spec "error contract").
-- Env overrides for testability: `MCPMUX_SOCKET` (socket path), `MCPMUX_CONFIG` (config file path). Both default as in Task 2/5.
+- Env overrides for testability: `MDUCT_SOCKET` (socket path), `MDUCT_CONFIG` (config file path). Both default as in Task 2/5.
 - All management ops must work without a TTY (AX requirement). Plan 1 has no interactive UI at all.
 - Commit after every green test cycle. Commit messages in English, conventional prefix (`feat:`, `test:`, `chore:`).
 
@@ -32,13 +32,13 @@
 `package.json`:
 ```json
 {
-  "name": "mcpmux",
+  "name": "mduct",
   "version": "0.1.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "test": "bun test",
-    "build": "bun build --compile --outfile dist/mux src/main.ts"
+    "build": "bun build --compile --outfile dist/mduct src/main.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -67,7 +67,7 @@ dist/
 
 - [ ] **Step 2: Install deps**
 
-Run: `cd ~/dev/mcpmux && ~/.bun/bin/bun install`
+Run: `cd ~/dev/mduct && ~/.bun/bin/bun install`
 Expected: lockfile created, sdk + zod installed. (bun is NOT on PATH on this machine — always `~/.bun/bin/bun`.)
 
 - [ ] **Step 3: Write failing util tests**
@@ -149,7 +149,7 @@ git add -A && git commit -m "feat: scaffold bun project + jsonc/env utils"
     idleTtlMin?: number; note?: string; disabled?: boolean;
   };
   type Config = { servers: Record<string, ServerCfg> };
-  configPath(): string            // $MCPMUX_CONFIG ?? ~/.config/mcpmux/servers.jsonc
+  configPath(): string            // $MDUCT_CONFIG ?? ~/.config/mduct/servers.jsonc
   loadConfig(): Config            // missing file → { servers: {} }; env-expanded; validated
   ```
 - Consumes: `stripJsonc`, `expandEnv` from Task 1.
@@ -165,17 +165,17 @@ import { join } from "node:path";
 import { loadConfig } from "../src/config";
 
 function withCfg(content: string): Config0 {
-  const dir = mkdtempSync(join(tmpdir(), "mux-"));
+  const dir = mkdtempSync(join(tmpdir(), "mduct-"));
   const p = join(dir, "servers.jsonc");
   writeFileSync(p, content);
-  process.env.MCPMUX_CONFIG = p;
+  process.env.MDUCT_CONFIG = p;
   return loadConfig();
 }
 type Config0 = ReturnType<typeof loadConfig>;
 
 describe("loadConfig", () => {
   test("missing file yields empty servers", () => {
-    process.env.MCPMUX_CONFIG = "/nonexistent/servers.jsonc";
+    process.env.MDUCT_CONFIG = "/nonexistent/servers.jsonc";
     expect(loadConfig()).toEqual({ servers: {} });
   });
 
@@ -220,7 +220,7 @@ export type ServerCfg = {
 export type Config = { servers: Record<string, ServerCfg> };
 
 export function configPath(): string {
-  return process.env.MCPMUX_CONFIG ?? join(homedir(), ".config", "mcpmux", "servers.jsonc");
+  return process.env.MDUCT_CONFIG ?? join(homedir(), ".config", "mduct", "servers.jsonc");
 }
 
 export function loadConfig(): Config {
@@ -312,7 +312,7 @@ test("fixture serves echo over stdio", async () => {
 - [ ] **Step 3: Run, expect PASS, commit**
 
 Run: `~/.bun/bin/bun test test/fixture.test.ts`
-Expected: 1 pass (proves sdk plumbing + fixture before any mux code exists).
+Expected: 1 pass (proves sdk plumbing + fixture before any mduct code exists).
 
 ```bash
 git add -A && git commit -m "test: stdio fixture MCP server + sdk smoke test"
@@ -434,7 +434,7 @@ export class ServerConnection {
 
   private async ensure(): Promise<Client> {
     if (this.client) return this.client;
-    const client = new Client({ name: "mcpmux", version: "0.1.0" });
+    const client = new Client({ name: "mduct", version: "0.1.0" });
     const transport = this.cfg.command
       ? new StdioClientTransport({
           command: this.cfg.command,
@@ -509,7 +509,7 @@ git add -A && git commit -m "feat: per-server MCP connection with guard, cache, 
 **Interfaces:**
 - Produces:
   ```ts
-  socketPath(): string  // $MCPMUX_SOCKET ?? $XDG_RUNTIME_DIR/mcpmux.sock ?? ~/.cache/mcpmux/daemon.sock
+  socketPath(): string  // $MDUCT_SOCKET ?? $XDG_RUNTIME_DIR/mduct.sock ?? ~/.cache/mduct/daemon.sock
   type Handler = (method: string, params: any) => Promise<unknown>
   serveIpc(path: string, handler: Handler): { stop(): void }
   request(path: string, method: string, params: unknown, timeoutMs?: number): Promise<unknown>
@@ -528,7 +528,7 @@ import { join } from "node:path";
 import { request, serveIpc } from "../src/ipc";
 
 test("round-trip and error propagation", async () => {
-  const sock = join(mkdtempSync(join(tmpdir(), "mux-")), "d.sock");
+  const sock = join(mkdtempSync(join(tmpdir(), "mduct-")), "d.sock");
   const srv = serveIpc(sock, async (method, params) => {
     if (method === "add") return (params.a as number) + (params.b as number);
     throw new Error(`unknown method ${method}`);
@@ -547,9 +547,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 export function socketPath(): string {
-  if (process.env.MCPMUX_SOCKET) return process.env.MCPMUX_SOCKET;
+  if (process.env.MDUCT_SOCKET) return process.env.MDUCT_SOCKET;
   const run = process.env.XDG_RUNTIME_DIR;
-  return run ? join(run, "mcpmux.sock") : join(homedir(), ".cache", "mcpmux", "daemon.sock");
+  return run ? join(run, "mduct.sock") : join(homedir(), ".cache", "mduct", "daemon.sock");
 }
 
 export type Handler = (method: string, params: any) => Promise<unknown>;
@@ -583,7 +583,7 @@ export async function request(path: string, method: string, params: unknown, tim
   return await new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
     let buf = "";
-    const timer = setTimeout(() => { reject(new Error(`daemon did not answer within ${timeoutMs}ms — check: mux status`)); sock?.end(); }, timeoutMs);
+    const timer = setTimeout(() => { reject(new Error(`daemon did not answer within ${timeoutMs}ms — check: mduct status`)); sock?.end(); }, timeoutMs);
     let sock: any;
     Bun.connect({
       unix: path,
@@ -645,12 +645,12 @@ let stop: (() => Promise<void>) | null = null;
 afterEach(async () => { await stop?.(); stop = null; });
 
 async function boot(extraServers = ""): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "mux-"));
+  const dir = mkdtempSync(join(tmpdir(), "mduct-"));
   const sock = join(dir, "d.sock");
   const cfg = join(dir, "servers.jsonc");
   writeFileSync(cfg, `{"servers":{"fix":{"command":"${process.execPath}","args":["test/fixture-server.ts"]}${extraServers}}}`);
-  process.env.MCPMUX_CONFIG = cfg;
-  process.env.MCPMUX_SOCKET = sock;
+  process.env.MDUCT_CONFIG = cfg;
+  process.env.MDUCT_SOCKET = sock;
   const d = await startDaemon();
   stop = d.stop;
   return sock;
@@ -750,7 +750,7 @@ export async function startDaemon(): Promise<{ stop(): Promise<void> }> {
       case "schema": {
         const tools = await conn(p.server).listTools();
         const t = tools.find((x) => x.name === p.tool);
-        if (!t) throw new Error(`unknown tool "${p.tool}" on "${p.server}" — see: mux tools ${p.server}`);
+        if (!t) throw new Error(`unknown tool "${p.tool}" on "${p.server}" — see: mduct tools ${p.server}`);
         return t.inputSchema ?? {};
       }
       case "servers":
@@ -791,14 +791,14 @@ git add -A && git commit -m "feat: daemon — lazy connections, hot reload, idle
 
 ---
 
-### Task 7: CLI (`mux`) with daemon autostart
+### Task 7: CLI (`mduct`) with daemon autostart
 
 **Files:**
 - Create: `src/main.ts`, `src/cliFormat.ts`, `test/cli.test.ts`
 
 **Interfaces:**
 - Consumes: `request`/`socketPath` (5), daemon methods (6), `configPath` (2).
-- Produces: the `mux` command surface of plan 1:
+- Produces: the `mduct` command surface of plan 1:
   `call <server> <tool> [k=v…] [--args json] [--timeout s] [--raw]`,
   `tools <server>`, `schema <server> <tool>`, `servers`, `index`, `logs [server]`,
   `status`, `daemon`, `help`. Exit 0/1; errors on stderr.
@@ -812,54 +812,54 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const dir = mkdtempSync(join(tmpdir(), "mux-"));
+const dir = mkdtempSync(join(tmpdir(), "mduct-"));
 const env = {
   ...process.env,
-  MCPMUX_SOCKET: join(dir, "d.sock"),
-  MCPMUX_CONFIG: join(dir, "servers.jsonc"),
+  MDUCT_SOCKET: join(dir, "d.sock"),
+  MDUCT_CONFIG: join(dir, "servers.jsonc"),
 };
-writeFileSync(env.MCPMUX_CONFIG!, JSON.stringify({
+writeFileSync(env.MDUCT_CONFIG!, JSON.stringify({
   servers: { fix: { command: process.execPath, args: ["test/fixture-server.ts"], note: "test fixture" } },
 }));
 
-async function mux(...argv: string[]): Promise<{ out: string; err: string; code: number }> {
+async function mduct(...argv: string[]): Promise<{ out: string; err: string; code: number }> {
   const p = Bun.spawn([process.execPath, "src/main.ts", ...argv], { env, stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   return { out, err, code };
 }
 
-afterAll(async () => { await mux("daemon", "--stop"); });
+afterAll(async () => { await mduct("daemon", "--stop"); });
 
 test("call autostarts daemon and prints text content", async () => {
-  const r = await mux("call", "fix", "echo", "text=hello");
+  const r = await mduct("call", "fix", "echo", "text=hello");
   expect(r.code).toBe(0);
   expect(r.out.trim()).toBe("hello");
 });
 
 test("--args json wins for nested payloads", async () => {
-  const r = await mux("call", "fix", "echo", "--args", '{"text":"json way"}');
+  const r = await mduct("call", "fix", "echo", "--args", '{"text":"json way"}');
   expect(r.out.trim()).toBe("json way");
 });
 
 test("tool error → stderr + exit 1", async () => {
-  const r = await mux("call", "fix", "boom");
+  const r = await mduct("call", "fix", "boom");
   expect(r.code).toBe(1);
   expect(r.err).toContain("kaboom");
 });
 
 test("tools prints compact lines", async () => {
-  const r = await mux("tools", "fix");
+  const r = await mduct("tools", "fix");
   expect(r.out).toMatch(/echo\s+— echoes text back/);
 });
 
 test("index prints one line per server with note", async () => {
-  const r = await mux("index");
+  const r = await mduct("index");
   expect(r.out).toContain("fix");
   expect(r.out).toContain("test fixture");
 });
 
 test("unknown server error names the fix", async () => {
-  const r = await mux("call", "nope", "x");
+  const r = await mduct("call", "nope", "x");
   expect(r.code).toBe(1);
   expect(r.err).toContain('unknown server "nope"');
 });
@@ -881,7 +881,7 @@ export function printResult(res: { content: unknown[]; isError?: boolean }, raw:
     if (c.type === "text") lines.push(c.text);
     else if (c.data && c.mimeType) {
       const ext = String(c.mimeType).split("/")[1]?.split("+")[0] ?? "bin";
-      const dir = join(tmpdir(), "mcpmux");
+      const dir = join(tmpdir(), "mduct");
       mkdirSync(dir, { recursive: true });
       const file = join(dir, `${Date.now()}-${i}.${ext}`);
       writeFileSync(file, Buffer.from(c.data, "base64"));
@@ -915,12 +915,12 @@ import { configPath, loadConfig } from "./config";
 import { request, socketPath } from "./ipc";
 import { parseArgs, printResult } from "./cliFormat";
 
-const HELP = `mcpmux — MCP multiplexer. Commands:
-  mux call <server> <tool> [k=v ...] [--args '<json>'] [--timeout <s>] [--raw]
-  mux tools <server>          mux schema <server> <tool>
-  mux servers                 mux index
-  mux logs [server]           mux status
-  mux daemon [--stop]         mux help
+const HELP = `mduct — MCP multiplexer. Commands:
+  mduct call <server> <tool> [k=v ...] [--args '<json>'] [--timeout <s>] [--raw]
+  mduct tools <server>          mduct schema <server> <tool>
+  mduct servers                 mduct index
+  mduct logs [server]           mduct status
+  mduct daemon [--stop]         mduct help
 Config: ${configPath()}`;
 
 function flag(argv: string[], name: string): string | undefined {
@@ -953,7 +953,7 @@ async function daemonRequest(method: string, params: unknown): Promise<unknown> 
       await new Promise((r) => setTimeout(r, 250));
       try { return await request(sock, method, params); } catch { /* not up yet */ }
     }
-    throw new Error(`daemon did not come up on ${sock} — try: mux daemon (foreground) to see why`);
+    throw new Error(`daemon did not come up on ${sock} — try: mduct daemon (foreground) to see why`);
   }
 }
 
@@ -973,7 +973,7 @@ async function main(): Promise<number> {
       const timeout = flag(argv, "--timeout");
       const argsJson = flag(argv, "--args");
       const [server, tool, ...pairs] = argv;
-      if (!server || !tool) { console.error("usage: mux call <server> <tool> [k=v ...] — see: mux servers"); return 1; }
+      if (!server || !tool) { console.error("usage: mduct call <server> <tool> [k=v ...] — see: mduct servers"); return 1; }
       const res = await daemonRequest("call", {
         server, tool, args: parseArgs(pairs, argsJson),
         timeoutMs: timeout ? Number(timeout) * 1000 : undefined,
@@ -998,7 +998,7 @@ async function main(): Promise<number> {
       const cfg = loadConfig(); // no daemon needed: index must work in hooks even when cold
       const names = Object.entries(cfg.servers).filter(([, s]) => !s.disabled);
       if (names.length === 0) return 0;
-      console.log("MCP tools available via `mux` CLI (details: mux tools <server>; call: mux call <server> <tool> key=value):");
+      console.log("MCP tools available via `mduct` CLI (details: mduct tools <server>; call: mduct call <server> <tool> key=value):");
       for (const [name, s] of names) console.log(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
       return 0;
     }
@@ -1028,7 +1028,7 @@ Expected: 6 pass. If the autostarted daemon lingers, `--stop` in afterAll cleans
 Run: `~/.bun/bin/bun test`
 
 ```bash
-git add -A && git commit -m "feat: mux CLI — call/tools/schema/servers/index/logs/status with daemon autostart"
+git add -A && git commit -m "feat: mduct CLI — call/tools/schema/servers/index/logs/status with daemon autostart"
 ```
 
 ---
@@ -1046,35 +1046,35 @@ git add -A && git commit -m "feat: mux CLI — call/tools/schema/servers/index/l
 
 Run:
 ```bash
-cd ~/dev/mcpmux && ~/.bun/bin/bun run build
-MCPMUX_SOCKET=/tmp/mux-smoke.sock MCPMUX_CONFIG=/tmp/mux-smoke.jsonc ./dist/mux help
+cd ~/dev/mduct && ~/.bun/bin/bun run build
+MDUCT_SOCKET=/tmp/mduct-smoke.sock MDUCT_CONFIG=/tmp/mduct-smoke.jsonc ./dist/mduct help
 ```
-Expected: help text prints; binary is self-contained (`file dist/mux` → ELF executable).
+Expected: help text prints; binary is self-contained (`file dist/mduct` → ELF executable).
 
 - [ ] **Step 2: Write `install.sh`**
 
 ```sh
 #!/usr/bin/env sh
-# mcpmux installer: puts the mux binary into ~/.local/bin.
+# mduct installer: puts the mduct binary into ~/.local/bin.
 set -eu
-REPO="${MCPMUX_REPO:-OWNER/mcpmux}"   # set on first GitHub release
-BIN_DIR="${MCPMUX_BIN_DIR:-$HOME/.local/bin}"
+REPO="${MDUCT_REPO:-OWNER/mduct}"   # set on first GitHub release
+BIN_DIR="${MDUCT_BIN_DIR:-$HOME/.local/bin}"
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"; [ "$ARCH" = "aarch64" ] && ARCH="arm64"; [ "$ARCH" = "x86_64" ] && ARCH="x64"
-URL="https://github.com/$REPO/releases/latest/download/mux-$OS-$ARCH"
+URL="https://github.com/$REPO/releases/latest/download/mduct-$OS-$ARCH"
 mkdir -p "$BIN_DIR"
-curl -fsSL "$URL" -o "$BIN_DIR/mux"
-chmod +x "$BIN_DIR/mux"
-echo "installed: $BIN_DIR/mux ($("$BIN_DIR/mux" --version 2>/dev/null || echo 'run: mux help'))"
+curl -fsSL "$URL" -o "$BIN_DIR/mduct"
+chmod +x "$BIN_DIR/mduct"
+echo "installed: $BIN_DIR/mduct ($("$BIN_DIR/mduct" --version 2>/dev/null || echo 'run: mduct help'))"
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "NOTE: add $BIN_DIR to PATH";; esac
 ```
 
 - [ ] **Step 3: Write `README.md`**
 
-Content requirements (write it out, ~60 lines): what mcpmux is (one paragraph, the
+Content requirements (write it out, ~60 lines): what mduct is (one paragraph, the
 context-flooding problem + daemon), quickstart (config example with one stdio and one
-HTTP server incl. `${ENV}` secret reference, `mux call`, `mux index`), the output
-contract, guard example, env overrides table (`MCPMUX_SOCKET`, `MCPMUX_CONFIG`),
+HTTP server incl. `${ENV}` secret reference, `mduct call`, `mduct index`), the output
+contract, guard example, env overrides table (`MDUCT_SOCKET`, `MDUCT_CONFIG`),
 roadmap section pointing at the spec (registry picker, --from-claude, OAuth,
 hooks, npm/brew — "Plan 2").
 
@@ -1093,7 +1093,7 @@ git add -A && git commit -m "chore: compiled binary build, installer, README"
 
 - [ ] **Step 1: Configure the GitLab MCP server for real**
 
-Write `~/.config/mcpmux/servers.jsonc` (real config, NOT the test one):
+Write `~/.config/mduct/servers.jsonc` (real config, NOT the test one):
 ```jsonc
 {
   "servers": {
@@ -1112,12 +1112,12 @@ Write `~/.config/mcpmux/servers.jsonc` (real config, NOT the test one):
 
 ```bash
 export GITLAB_PAT=<echter Token>
-mux tools gitlab | head -20        # compact list, no schemas
-mux call gitlab get_current_user   # returns the GitLab user JSON as text
-mux index                          # one gitlab line, ~20 tokens
-mux status && mux logs gitlab
+mduct tools gitlab | head -20        # compact list, no schemas
+mduct call gitlab get_current_user   # returns the GitLab user JSON as text
+mduct index                          # one gitlab line, ~20 tokens
+mduct status && mduct logs gitlab
 ```
-Expected: all four behave; second `mux call` is noticeably faster (connection reuse — THE reason the daemon exists). Record timings in the commit message.
+Expected: all four behave; second `mduct call` is noticeably faster (connection reuse — THE reason the daemon exists). Record timings in the commit message.
 
 - [ ] **Step 3: Commit any fixes found, tag**
 
@@ -1130,8 +1130,8 @@ git tag v0.1.0
 
 ## Deferred to Plan 2 (per spec, unchanged)
 
-`mux add` (registry ref + `-- command` + interactive picker), `mux search`,
-`--from-claude` multi-config import, `mux remove/enable/disable`, `mux auth`
-(native OAuth), `mux doctor`, `mux hook install claude` (SessionStart index
+`mduct add` (registry ref + `-- command` + interactive picker), `mduct search`,
+`--from-claude` multi-config import, `mduct remove/enable/disable`, `mduct auth`
+(native OAuth), `mduct doctor`, `mduct hook install claude` (SessionStart index
 injection, PreToolUse redirect, migration nudge), systemd `--install`,
 npm/brew distribution, macOS/arm64 release builds.

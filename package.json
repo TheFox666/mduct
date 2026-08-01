@@ -1,11 +1,11 @@
 {
-  "name": "mcpmux",
+  "name": "mduct",
   "version": "0.1.2",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "test": "bun test",
-    "build": "bun build --compile --outfile dist/mux src/main.ts"
+    "build": "bun build --compile --outfile dist/mduct src/main.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

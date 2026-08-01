@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { FileOAuthProvider } from "../src/daemon/oauthProvider";
 
 beforeEach(() => {
-  process.env.MCPMUX_CONFIG = join(mkdtempSync(join(tmpdir(), "mux-")), "servers.jsonc");
+  process.env.MDUCT_CONFIG = join(mkdtempSync(join(tmpdir(), "mduct-")), "servers.jsonc");
 });
 
 describe("FileOAuthProvider", () => {

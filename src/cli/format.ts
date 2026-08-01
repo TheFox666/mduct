@@ -24,10 +24,10 @@ function emit(s: string): void {
 
 /** Private, per-invocation dir for binary content — NOT a shared, predictable /tmp path (#14). */
 function mediaDir(): string {
-  const base = process.env.XDG_RUNTIME_DIR ?? join(homedir(), ".cache", "mcpmux");
+  const base = process.env.XDG_RUNTIME_DIR ?? join(homedir(), ".cache", "mduct");
   const root = join(base, "media");
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  // reap prior invocations' media dirs (>1h old). Each mux call mkdtemps a fresh dir and emits the
+  // reap prior invocations' media dirs (>1h old). Each mduct call mkdtemps a fresh dir and emits the
   // file PATH — the agent reads it AFTER this process exits, so we can't clean at exit; sweep old
   // ones here instead, or the ~/.cache fallback (not tmpfs-cleared) grows without bound (#3).
   try {
@@ -117,9 +117,9 @@ function oversizeWarning(chars: number, server: string, tool: string, r: Recipe)
   const dropNote = r.drop.length ? `   dropped (long/nested): ${r.drop.slice(0, 8).join(" ")}` : "";
   return [
     `⚠ ${r.count} items, ~${Math.round(chars / 1024)} KB — too big for context. Slim it, don't dump it:`,
-    `  project fields:  mux call ${server} ${tool} … --json | jq -c '${proj}'`,
+    `  project fields:  mduct call ${server} ${tool} … --json | jq -c '${proj}'`,
     `  fields kept:     ${r.keep.join(" ")}${dropNote}`,
-    `  or narrow:       add filter args (limit=/state=/query=…) — mux schema ${server} ${tool}`,
+    `  or narrow:       add filter args (limit=/state=/query=…) — mduct schema ${server} ${tool}`,
     `  or full anyway:  re-run with --full`,
   ].join("\n");
 }
@@ -141,7 +141,7 @@ export function formatResult(res: { content: unknown[]; isError?: boolean }, opt
     const payload = jsonPayload(res);
     if (payload !== undefined) return { out: JSON.stringify(payload), code: 0 };
     // no JSON in the result (e.g. a markdown-only server) → fail LOUD on stderr instead of quietly
-    // printing prose to stdout, which would feed a `| jq` garbage while mux exits 0 (#4).
+    // printing prose to stdout, which would feed a `| jq` garbage while mduct exits 0 (#4).
     return { err: "--json: this result has no JSON payload (server returned text/markdown) — re-run without --json", code: 2 };
   }
   const lines: string[] = [];
@@ -195,17 +195,17 @@ function coerce(v: string): unknown {
   return v;
 }
 
-/** The prompt/index block — MCP servers + CLI tools — shared by `mux index` and the SessionStart hook. */
+/** The prompt/index block — MCP servers + CLI tools — shared by `mduct index` and the SessionStart hook. */
 export function renderIndex(cfg: { servers: Record<string, { note?: string; disabled?: boolean }>; tools: Record<string, { note?: string; disabled?: boolean }> }): string[] {
   const out: string[] = [];
   const servers = Object.entries(cfg.servers).filter(([, s]) => !s.disabled);
   const tools = Object.entries(cfg.tools).filter(([, t]) => !t.disabled);
   if (servers.length) {
-    out.push("MCP tools via `mux` CLI (list+args: mux tools <server>; call: mux call <server> <tool> key=value key:=<json>):");
+    out.push("MCP tools via `mduct` CLI (list+args: mduct tools <server>; call: mduct call <server> <tool> key=value key:=<json>):");
     for (const [name, s] of servers) out.push(`  ${name.padEnd(12)} — ${s.note ?? "MCP server"}`);
   }
   if (tools.length) {
-    out.push("CLI tools via `mux` CLI (run: mux run <tool> [args…]):");
+    out.push("CLI tools via `mduct` CLI (run: mduct run <tool> [args…]):");
     for (const [name, t] of tools) out.push(`  ${name.padEnd(12)} — ${t.note ?? "CLI tool"}`);
   }
   return out;

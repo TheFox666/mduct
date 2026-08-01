@@ -7,16 +7,16 @@ import { loadConfig } from "../src/shared/config";
 type Config0 = ReturnType<typeof loadConfig>;
 
 function withCfg(content: string): Config0 {
-  const dir = mkdtempSync(join(tmpdir(), "mux-"));
+  const dir = mkdtempSync(join(tmpdir(), "mduct-"));
   const p = join(dir, "servers.jsonc");
   writeFileSync(p, content);
-  process.env.MCPMUX_CONFIG = p;
+  process.env.MDUCT_CONFIG = p;
   return loadConfig();
 }
 
 describe("loadConfig", () => {
   test("missing file yields empty servers", () => {
-    process.env.MCPMUX_CONFIG = "/nonexistent/servers.jsonc";
+    process.env.MDUCT_CONFIG = "/nonexistent/servers.jsonc";
     expect(loadConfig()).toEqual({ servers: {}, tools: {} });
   });
 

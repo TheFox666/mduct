@@ -6,16 +6,16 @@ function known(): Record<string, ToolCfg> {
   return loadConfig().tools;
 }
 
-/** `mux run <tool> [args…]` — exec the tool with its stored args-prefix + env/wrapping,
+/** `mduct run <tool> [args…]` — exec the tool with its stored args-prefix + env/wrapping,
  *  inheriting stdio and forwarding the exit code. This is what makes a CLI tool feel identical
  *  to an MCP tool to an agent: one discoverable entry point, wrapping applied centrally. */
 export async function cmdRun(argv: string[]): Promise<number> {
   const name = argv[0];
   const tools = known();
-  if (!name) { console.error(`usage: mux run <tool> [args…] — tools: ${Object.keys(tools).join(", ") || "(none)"}`); return 1; }
+  if (!name) { console.error(`usage: mduct run <tool> [args…] — tools: ${Object.keys(tools).join(", ") || "(none)"}`); return 1; }
   const t = tools[name];
   if (!t || t.disabled) {
-    console.error(`unknown tool "${name}" — configured: ${Object.keys(tools).filter((n) => !tools[n]!.disabled).join(", ") || "(none)"} (see: mux tool status)`);
+    console.error(`unknown tool "${name}" — configured: ${Object.keys(tools).filter((n) => !tools[n]!.disabled).join(", ") || "(none)"} (see: mduct tool status)`);
     return 1;
   }
   const proc = Bun.spawn([t.run, ...(t.args ?? []), ...argv.slice(1)], {
@@ -32,7 +32,7 @@ async function isInstalled(t: ToolCfg): Promise<boolean> {
   return (await p.exited) === 0;
 }
 
-/** `mux tool status` — installed/missing per tool; `mux tool setup <name>` — run its installer. */
+/** `mduct tool status` — installed/missing per tool; `mduct tool setup <name>` — run its installer. */
 export async function cmdTool(argv: string[]): Promise<number> {
   const sub = argv[0];
   const tools = known();
@@ -45,9 +45,9 @@ export async function cmdTool(argv: string[]): Promise<number> {
       const spec = parseNpmSpec(t);
       if (spec?.version) {
         const latest = await npmLatest(spec.pkg);
-        if (latest && isNewer(latest, spec.version)) upd = `  ↑ update ${spec.version} → ${latest} (mux tool update ${name})`;
+        if (latest && isNewer(latest, spec.version)) upd = `  ↑ update ${spec.version} → ${latest} (mduct tool update ${name})`;
       }
-      console.log(`${name.padEnd(14)} ${ok ? "✓ installed" : "✗ missing"}${t.setup && !ok ? `  → mux tool setup ${name}` : ""}${t.note ? `  — ${t.note}` : ""}${upd}`);
+      console.log(`${name.padEnd(14)} ${ok ? "✓ installed" : "✗ missing"}${t.setup && !ok ? `  → mduct tool setup ${name}` : ""}${t.note ? `  — ${t.note}` : ""}${upd}`);
     }
     return 0;
   }
@@ -70,13 +70,13 @@ export async function cmdTool(argv: string[]): Promise<number> {
         console.log(`${name}: up to date (${spec.version})`);
       }
     }
-    if (bumped) console.log(`\n${bumped} tool(s) re-pinned — run \`mux tool setup <name>\` if a new browser/binary is needed`);
+    if (bumped) console.log(`\n${bumped} tool(s) re-pinned — run \`mduct tool setup <name>\` if a new browser/binary is needed`);
     return 0;
   }
   if (sub === "setup") {
     const name = argv[1];
     const t = name ? tools[name] : undefined;
-    if (!t) { console.error(`usage: mux tool setup <name> — tools: ${Object.keys(tools).join(", ") || "(none)"}`); return 1; }
+    if (!t) { console.error(`usage: mduct tool setup <name> — tools: ${Object.keys(tools).join(", ") || "(none)"}`); return 1; }
     if (!t.setup) { console.error(`tool "${name}" has no setup command — install it manually`); return 1; }
     console.log(`setting up ${name}: ${t.setup}`);
     const p = Bun.spawn(["sh", "-c", t.setup], { stdin: "inherit", stdout: "inherit", stderr: "inherit", env: { ...process.env, ...t.env } });
@@ -84,6 +84,6 @@ export async function cmdTool(argv: string[]): Promise<number> {
     console.log(code === 0 ? `✓ ${name} set up` : `✗ setup failed (exit ${code})`);
     return code === 0 ? 0 : 1;
   }
-  console.error("usage: mux tool status | mux tool setup <name> | mux tool update [name]");
+  console.error("usage: mduct tool status | mduct tool setup <name> | mduct tool update [name]");
   return 1;
 }

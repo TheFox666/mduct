@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { publisher, searchRegistry, toServerCfg } from "../src/shared/registry";
 
 // isolate the per-query cache so it starts empty and never touches ~/.cache.
-process.env.MCPMUX_CACHE = mkdtempSync(join(tmpdir(), "mcpmux-cache-"));
+process.env.MDUCT_CACHE = mkdtempSync(join(tmpdir(), "mduct-cache-"));
 
 // Fixture registry serving the real v0 shape (verified 2026-07-19 against
 // registry.modelcontextprotocol.io). Counts requests so tests can assert cache hits.
@@ -50,7 +50,7 @@ const fixture = Bun.serve({
     return Response.json({ servers, metadata: {} });
   },
 });
-process.env.MCPMUX_REGISTRY = `http://localhost:${fixture.port}`;
+process.env.MDUCT_REGISTRY = `http://localhost:${fixture.port}`;
 afterAll(() => fixture.stop(true));
 
 describe("searchRegistry", () => {
@@ -101,16 +101,16 @@ describe("searchRegistry", () => {
 
   test("serves a stale cache when the fetch fails, instead of erroring", async () => {
     const good = await searchRegistry("cachetest"); // ensure cache is populated
-    const file = join(process.env.MCPMUX_CACHE!, "registry", "cachetest.json");
+    const file = join(process.env.MDUCT_CACHE!, "registry", "cachetest.json");
     const old = new Date(Date.now() - 48 * 60 * 60 * 1000); // age past the 24h TTL
     utimesSync(file, old, old);
-    const base = process.env.MCPMUX_REGISTRY;
-    process.env.MCPMUX_REGISTRY = "http://127.0.0.1:1"; // connection refused → fast failure
+    const base = process.env.MDUCT_REGISTRY;
+    process.env.MDUCT_REGISTRY = "http://127.0.0.1:1"; // connection refused → fast failure
     try {
       const stale = await searchRegistry("cachetest");
       expect(stale).toEqual(good); // last-known results, not a thrown error
     } finally {
-      process.env.MCPMUX_REGISTRY = base;
+      process.env.MDUCT_REGISTRY = base;
     }
   });
 });

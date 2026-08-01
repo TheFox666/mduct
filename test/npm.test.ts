@@ -40,7 +40,7 @@ describe("npmLatest", () => {
       return new Response("not found", { status: 404 });
     },
   });
-  process.env.MCPMUX_NPM_REGISTRY = `http://localhost:${fixture.port}`;
+  process.env.MDUCT_NPM_REGISTRY = `http://localhost:${fixture.port}`;
   afterAll(() => fixture.stop(true));
 
   test("returns the latest version", async () => {

@@ -13,7 +13,7 @@ export async function startDaemon(opts: { standalone?: boolean } = {}): Promise<
   let config: Config = loadConfig();
   const conns = new Map<string, ServerConnection>();
   const lastUsed = new Map<string, number>();
-  // structured ring buffer: each entry tags its server (or null) so `mux logs <server>`
+  // structured ring buffer: each entry tags its server (or null) so `mduct logs <server>`
   // filters exactly instead of substring-matching ("lab" matched "gitlab.") (#19/N6)
   const logs: { ts: string; server: string | null; line: string }[] = [];
   const log = (line: string, server: string | null = null) => {
@@ -81,7 +81,7 @@ export async function startDaemon(opts: { standalone?: boolean } = {}): Promise<
       case "schema": {
         const tools = await conn(p.server).listTools();
         const t = tools.find((x) => x.name === p.tool);
-        if (!t) throw new Error(`unknown tool "${p.tool}" on "${p.server}" — see: mux tools ${p.server}`);
+        if (!t) throw new Error(`unknown tool "${p.tool}" on "${p.server}" — see: mduct tools ${p.server}`);
         return t.inputSchema ?? {};
       }
       case "servers":

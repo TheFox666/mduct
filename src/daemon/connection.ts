@@ -9,7 +9,7 @@ import { FileOAuthProvider } from "./oauthProvider";
 
 /**
  * A child MCP server inherits the daemon's cwd unless told otherwise. The daemon is lazily
- * autostarted by the first `mux` call, so its cwd is that caller's dir — for an agent-office
+ * autostarted by the first `mduct` call, so its cwd is that caller's dir — for a short-lived
  * turn, an ephemeral per-task git worktree. Once the worktree is torn down, inheriting that
  * dead path makes posix_spawn fail with ENOENT for every fresh server, fleet-wide. So: keep
  * inheriting while the cwd is alive (relative-path server commands still resolve as before),
@@ -76,7 +76,7 @@ export class ServerConnection {
     if (this.client) return Promise.resolve(this.client);
     if (this.connecting) return this.connecting;
     this.connecting = (async () => {
-      const client = new Client({ name: "mcpmux", version: "0.1.0" });
+      const client = new Client({ name: "mduct", version: "0.1.0" });
       const transport = this.cfg.command
         ? new StdioClientTransport({
             command: this.cfg.command,
@@ -88,7 +88,7 @@ export class ServerConnection {
         : new StreamableHTTPClientTransport(new URL(this.cfg.url!), {
             requestInit: { headers: this.cfg.headers },
             // oauth servers: the SDK auto-uses/refreshes stored tokens; a 401 with no valid
-            // session surfaces as an error telling the user to run `mux auth <server>`
+            // session surfaces as an error telling the user to run `mduct auth <server>`
             ...(this.cfg.auth === "oauth" ? { authProvider: new FileOAuthProvider(this.name, "http://127.0.0.1:0/cb") } : {}),
           });
       // transport death → drop the dead client so the next call reconnects transparently (#5)

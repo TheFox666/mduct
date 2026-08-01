@@ -5,18 +5,18 @@ import { cacheDir } from "../shared/paths";
 import type { Config, ShadowRule } from "../shared/config";
 
 /**
- * Shadowing: a server may declare which *other* tool calls it could have served better, and mux
+ * Shadowing: a server may declare which *other* tool calls it could have served better, and mduct
  * says so once, at the moment of the call.
  *
  * Why here and not in a prompt block: the session-start index is read once and then loses against
- * habit — measured on a real session, 21 hive calls vs 270 greps into indexed repos, with the index
- * block present the whole time. A PreToolUse denial is the only channel that arrives at the moment
+ * habit — measured on a real session, 21 calls to a code-index server vs 270 greps into the repos it
+ * had indexed, the index block present throughout. A PreToolUse denial is the only channel that lands
  * the wrong tool is chosen.
  *
  * Why a budget: the point is a redirect, not a prohibition. grep is a legitimate tool; after the
  * budget is spent the rule goes quiet for the rest of the session and never fires again.
  *
- * mux knows nothing about what any server does — it matches the patterns the server declared and
+ * mduct knows nothing about what any server does — it matches the patterns the server declared and
  * prints the server's own hint. Remove the server from the config and the mechanism is inert.
  */
 
@@ -132,7 +132,7 @@ export function available(
   return tokens;
 }
 
-/** A `mux call <server>` in a Bash command — the conversion signal for a nudge. */
+/** A `mduct call <server>` in a Bash command — the conversion signal for a nudge. */
 export function muxCallServer(command: string): string | null {
   return /\bmux\s+(?:call|run)\s+([\w.-]+)/.exec(command)?.[1] ?? null;
 }

@@ -31,7 +31,7 @@ export function isNewer(a: string, b: string): boolean {
 }
 
 function registryBase(): string {
-  return process.env.MCPMUX_NPM_REGISTRY ?? "https://registry.npmjs.org";
+  return process.env.MDUCT_NPM_REGISTRY ?? "https://registry.npmjs.org";
 }
 
 /** Latest published version of an npm package, or null if unknown/unreachable. */

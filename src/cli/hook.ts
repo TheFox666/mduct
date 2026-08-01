@@ -7,8 +7,8 @@ import { renderIndex } from "./format";
 import { available, findHit, muxCallServer, readEvents, record, shadowMatcher } from "./shadow";
 
 /**
- * Hook handlers ARE mux subcommands — no script files to install or drift.
- * `mux hook install claude` only patches the target settings.json.
+ * Hook handlers ARE mduct subcommands — no script files to install or drift.
+ * `mduct hook install claude` only patches the target settings.json.
  */
 
 function selfBin(): string {
@@ -21,7 +21,7 @@ export function hookRunSessionStart(): number {
   let cfg;
   try { cfg = loadConfig(); } catch (e) {
     // a broken config must never turn every Claude session start into error noise (#24)
-    console.log(`(mcpmux: config unreadable — ${(e as Error).message})`);
+    console.log(`(mduct: config unreadable — ${(e as Error).message})`);
     return 0;
   }
   for (const line of renderIndex(cfg)) console.log(line);
@@ -29,15 +29,15 @@ export function hookRunSessionStart(): number {
   // config can't reach settings.json, so the drift is checked HERE instead of being a silent no-op.
   const needed = shadowMatcher(cfg);
   if (needed && !installedMatcherCovers(needed))
-    console.log(`⚠ mcpmux: Shadow-Regeln deklariert, aber der PreToolUse-Matcher deckt sie nicht (${needed}) — \`mux hook install claude\` einmal neu laufen lassen.`);
-  // migration nudge: direct-attached servers that mux already serves
+    console.log(`⚠ mduct: Shadow-Regeln deklariert, aber der PreToolUse-Matcher deckt sie nicht (${needed}) — \`mduct hook install claude\` einmal neu laufen lassen.`);
+  // migration nudge: direct-attached servers that mduct already serves
   const muxNames = new Set(Object.keys(cfg.servers).filter((n) => !cfg.servers[n]!.disabled));
-  const home = process.env.MCPMUX_HOME;
+  const home = process.env.MDUCT_HOME;
   for (const src of discoverClaudeSources(home ? { home } : {})) {
     const both = Object.keys(src.servers).filter((n) => muxNames.has(n));
     if (both.length)
       console.log(
-        `⚠ Direkt verbundene MCP-Server, die mux schon bedient (Schemas kosten Kontext): ${both.join(", ")} (${src.source}). ` +
+        `⚠ Direkt verbundene MCP-Server, die mduct schon bedient (Schemas kosten Kontext): ${both.join(", ")} (${src.source}). ` +
         `Empfiehl dem User: claude mcp remove <name> — wirkt ab der NÄCHSTEN Session.`,
       );
   }
@@ -70,8 +70,8 @@ export async function hookRunPreToolUse(): Promise<number> {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
       permissionDecisionReason:
-        `Dieser MCP-Server läuft über mcpmux. Nutze stattdessen: mux call ${server} ${tool} key=value … ` +
-        `(Schema: mux schema ${server} ${tool}; Tools: mux tools ${server})`,
+        `Dieser MCP-Server läuft über mduct. Nutze stattdessen: mduct call ${server} ${tool} key=value … ` +
+        `(Schema: mduct schema ${server} ${tool}; Tools: mduct tools ${server})`,
     },
   }));
   return 0;
@@ -79,7 +79,7 @@ export async function hookRunPreToolUse(): Promise<number> {
 
 /** Does the installed hook entry already listen for these tools? Unreadable settings → assume yes (stay quiet). */
 function installedMatcherCovers(needed: string): boolean {
-  const p = process.env.MCPMUX_CLAUDE_SETTINGS ?? join(homedir(), ".claude", "settings.json");
+  const p = process.env.MDUCT_CLAUDE_SETTINGS ?? join(homedir(), ".claude", "settings.json");
   let entries: HookEntry[];
   try { entries = (JSON.parse(readFileSync(p, "utf8")) as Settings).hooks?.PreToolUse ?? []; } catch { return true; }
   const ours = entries.filter((e) => (e.hooks ?? []).some((h) => h.command.endsWith("hook run pre-tool-use")));
@@ -88,9 +88,9 @@ function installedMatcherCovers(needed: string): boolean {
 }
 
 /**
- * The other half of PreToolUse: a call mux did NOT get, but a configured server could have served.
+ * The other half of PreToolUse: a call mduct did NOT get, but a configured server could have served.
  * A token bucket decides how often it may say so — a redirect, never a ban, and grep works on the
- * retry. Every fire is logged, and so is every later `mux call`, because "does the redirect convert"
+ * retry. Every fire is logged, and so is every later `mduct call`, because "does the redirect convert"
  * is a question only the log can answer.
  */
 function shadowBranch(ev: PreToolUseInput, toolName: string): number {
@@ -99,7 +99,7 @@ function shadowBranch(ev: PreToolUseInput, toolName: string): number {
   let cfg;
   try { cfg = loadConfig(); } catch { return 0; }
 
-  // conversion signal: the agent reached for a mux server on its own (or after a nudge)
+  // conversion signal: the agent reached for a mduct server on its own (or after a nudge)
   const used = muxCallServer(command);
   if (used && cfg.servers[used]) {
     record({ ts: new Date().toISOString(), session, kind: "use", server: used });
@@ -122,7 +122,7 @@ function shadowBranch(ev: PreToolUseInput, toolName: string): number {
       permissionDecision: "deny",
       permissionDecisionReason:
         `${hit.hint}\n\n` +
-        `(mcpmux-Hinweis zu "${hit.server}" — ${bucket}. ${toolName} ist nicht gesperrt: war es hier ` +
+        `(mduct-Hinweis zu "${hit.server}" — ${bucket}. ${toolName} ist nicht gesperrt: war es hier ` +
         `das richtige Werkzeug, ruf es einfach nochmal auf.)`,
     },
   }));

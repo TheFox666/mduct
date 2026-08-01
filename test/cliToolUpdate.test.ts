@@ -14,9 +14,9 @@ const fixture = Bun.serve({
 });
 afterAll(() => fixture.stop(true));
 
-const dir = mkdtempSync(join(tmpdir(), "mux-"));
+const dir = mkdtempSync(join(tmpdir(), "mduct-"));
 const cfgPath = join(dir, "servers.jsonc");
-const env = { ...process.env, MCPMUX_CONFIG: cfgPath, MCPMUX_SECRETS: join(dir, "s.json"), MCPMUX_NPM_REGISTRY: `http://localhost:${fixture.port}` };
+const env = { ...process.env, MDUCT_CONFIG: cfgPath, MDUCT_SECRETS: join(dir, "s.json"), MDUCT_NPM_REGISTRY: `http://localhost:${fixture.port}` };
 writeFileSync(cfgPath, JSON.stringify({
   servers: {},
   tools: {
@@ -25,20 +25,20 @@ writeFileSync(cfgPath, JSON.stringify({
   },
 }));
 
-async function mux(...argv: string[]): Promise<{ out: string; err: string; code: number }> {
+async function mduct(...argv: string[]): Promise<{ out: string; err: string; code: number }> {
   const p = Bun.spawn([process.execPath, "src/main.ts", ...argv], { env, stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   return { out, err, code };
 }
 
 test("tool status flags an available update for a pinned npm tool", async () => {
-  const r = await mux("tool", "status");
+  const r = await mduct("tool", "status");
   expect(r.out).toMatch(/playwright.*1\.61\.1.*1\.62\.0/); // update 1.61.1 → 1.62.0
   expect(r.out).not.toMatch(/kubectl.*→/); // non-npm tool: no update line
 });
 
 test("tool update re-pins the config to the latest version everywhere", async () => {
-  const r = await mux("tool", "update", "playwright");
+  const r = await mduct("tool", "update", "playwright");
   expect(r.code).toBe(0);
   expect(r.out).toContain("1.61.1 → 1.62.0");
   const cfg = readFileSync(cfgPath, "utf8");
@@ -47,6 +47,6 @@ test("tool update re-pins the config to the latest version everywhere", async ()
 });
 
 test("tool update with nothing newer says up to date", async () => {
-  const r = await mux("tool", "update", "playwright"); // now already 1.62.0
+  const r = await mduct("tool", "update", "playwright"); // now already 1.62.0
   expect(r.out).toMatch(/up to date|1\.62\.0/);
 });

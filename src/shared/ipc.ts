@@ -95,7 +95,7 @@ export async function request(path: string, method: string, params: unknown, tim
     let drains: (() => void)[] = [];
     let sock: { end(): void; write(d: Uint8Array): number } | undefined;
     const timer = setTimeout(() => {
-      reject(markTransport(new Error(`daemon did not answer within ${timeoutMs}ms — check: mux status`)));
+      reject(markTransport(new Error(`daemon did not answer within ${timeoutMs}ms — check: mduct status`)));
       sock?.end();
     }, timeoutMs);
     Bun.connect({

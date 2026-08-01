@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { request, serveIpc } from "../src/shared/ipc";
 
 function sock(): string {
-  return join(mkdtempSync(join(tmpdir(), "mux-")), "d.sock");
+  return join(mkdtempSync(join(tmpdir(), "mduct-")), "d.sock");
 }
 
 test("garbage line does not crash the server handler (#9)", async () => {

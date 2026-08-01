@@ -42,7 +42,7 @@ export class FileOAuthProvider implements OAuthClientProvider {
 
   get clientMetadata(): OAuthClientMetadata {
     return {
-      client_name: "mcpmux",
+      client_name: "mduct",
       redirect_uris: [this.redirect],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
@@ -59,11 +59,11 @@ export class FileOAuthProvider implements OAuthClientProvider {
   saveCodeVerifier(v: string): void { this.write({ ...this.read(), codeVerifier: v }); }
   codeVerifier(): string {
     const v = this.read().codeVerifier;
-    if (!v) throw new Error(`no PKCE code verifier stored for ${this.server} — restart: mux auth ${this.server}`);
+    if (!v) throw new Error(`no PKCE code verifier stored for ${this.server} — restart: mduct auth ${this.server}`);
     return v;
   }
 
-  /** The daemon prints this URL; a human opens it. `mux auth` captures the redirect. */
+  /** The daemon prints this URL; a human opens it. `mduct auth` captures the redirect. */
   redirectToAuthorization(url: URL): void { this.pendingAuthUrl = url; }
   pendingAuthUrl: URL | null = null;
 }

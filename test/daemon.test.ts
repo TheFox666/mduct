@@ -9,12 +9,12 @@ let stop: (() => Promise<void>) | null = null;
 afterEach(async () => { await stop?.(); stop = null; });
 
 async function boot(extraServers = ""): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "mux-"));
+  const dir = mkdtempSync(join(tmpdir(), "mduct-"));
   const sock = join(dir, "d.sock");
   const cfg = join(dir, "servers.jsonc");
   writeFileSync(cfg, `{"servers":{"fix":{"command":"${process.execPath}","args":["test/fixture-server.ts"]}${extraServers}}}`);
-  process.env.MCPMUX_CONFIG = cfg;
-  process.env.MCPMUX_SOCKET = sock;
+  process.env.MDUCT_CONFIG = cfg;
+  process.env.MDUCT_SOCKET = sock;
   const d = await startDaemon();
   stop = d.stop;
   return sock;

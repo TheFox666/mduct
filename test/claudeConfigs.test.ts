@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { discoverClaudeSources } from "../src/shared/claudeConfigs";
 
 function fixtureHome(): { home: string; cwd: string } {
-  const home = mkdtempSync(join(tmpdir(), "mux-home-"));
+  const home = mkdtempSync(join(tmpdir(), "mduct-home-"));
   // user-level ~/.claude.json
   writeFileSync(join(home, ".claude.json"), JSON.stringify({
     mcpServers: { gitlab: { command: "npx", args: ["-y", "gitlab-mcp"], env: { TOKEN: "x" } } },
@@ -16,9 +16,9 @@ function fixtureHome(): { home: string; cwd: string } {
     mcpServers: { linear: { type: "http", url: "https://mcp.linear.app/mcp" } },
   }));
   // project-level .mcp.json
-  const cwd = mkdtempSync(join(tmpdir(), "mux-proj-"));
+  const cwd = mkdtempSync(join(tmpdir(), "mduct-proj-"));
   writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({
-    mcpServers: { hive: { command: "bun", args: ["hive.ts"] } },
+    mcpServers: { notes: { command: "bun", args: ["notes.ts"] } },
   }));
   return { home, cwd };
 }
@@ -40,11 +40,11 @@ describe("discoverClaudeSources", () => {
     const all = Object.assign({}, ...sources.map((s) => s.servers));
     expect(all.gitlab).toMatchObject({ command: "npx", args: ["-y", "gitlab-mcp"], env: { TOKEN: "x" } });
     expect(all.linear).toMatchObject({ url: "https://mcp.linear.app/mcp" });
-    expect(all.hive).toMatchObject({ command: "bun" });
+    expect(all.notes).toMatchObject({ command: "bun" });
   });
 
   test("missing/broken files are skipped silently", () => {
-    const home = mkdtempSync(join(tmpdir(), "mux-empty-"));
+    const home = mkdtempSync(join(tmpdir(), "mduct-empty-"));
     writeFileSync(join(home, ".claude.json"), "NOT JSON");
     expect(discoverClaudeSources({ home, cwd: home })).toEqual([]);
   });

@@ -4,20 +4,20 @@ BIN_DIR ?= $(HOME)/.local/bin
 test: ## Testsuite
 	$(BUN) test
 
-build: ## Self-contained Binary nach dist/mux
+build: ## Self-contained Binary nach dist/mduct
 	$(BUN) run build
 
 install: build ## Binary nach ~/.local/bin (stoppt den laufenden Daemon fürs Ersetzen)
 	@mkdir -p $(BIN_DIR)
 	@# graceful shutdown so the daemon frees the old inode; ignore if none runs.
 	@# NO pkill -f: it matches the make shell's own command line and kills us.
-	-$(BIN_DIR)/mux daemon --stop 2>/dev/null || true
+	-$(BIN_DIR)/mduct daemon --stop 2>/dev/null || true
 	@# atomic replace: rename swaps the dir entry, so a still-running process
 	@# keeps its old inode and we never hit ETXTBSY on the busy target.
-	cp dist/mux $(BIN_DIR)/mux.new
-	chmod +x $(BIN_DIR)/mux.new
-	mv -f $(BIN_DIR)/mux.new $(BIN_DIR)/mux
-	@echo "installed: $(BIN_DIR)/mux (daemon autostarts on next call)"
+	cp dist/mduct $(BIN_DIR)/mduct.new
+	chmod +x $(BIN_DIR)/mduct.new
+	mv -f $(BIN_DIR)/mduct.new $(BIN_DIR)/mduct
+	@echo "installed: $(BIN_DIR)/mduct (daemon autostarts on next call)"
 
 clean: ## Build-Artefakte entfernen
 	rm -rf dist

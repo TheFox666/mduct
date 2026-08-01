@@ -23,7 +23,7 @@ export type RegistryHit = {
 };
 
 function baseUrl(): string {
-  return process.env.MCPMUX_REGISTRY ?? "https://registry.modelcontextprotocol.io";
+  return process.env.MDUCT_REGISTRY ?? "https://registry.modelcontextprotocol.io";
 }
 
 /** Default local name for a registry ref (com.gitlab/mcp → mcp). */
@@ -88,14 +88,14 @@ export async function searchRegistry(query: string): Promise<RegistryHit[]> {
   if (fresh) { const c = readCache(file); if (c) return c; }
 
   const url = `${baseUrl()}/v0/servers?search=${encodeURIComponent(query)}&limit=30`;
-  if (process.env.MCPMUX_DEBUG) console.error("[registry] GET", url);
+  if (process.env.MDUCT_DEBUG) console.error("[registry] GET", url);
   let res: Response;
   try {
     res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!res.ok) throw new Error(`registry answered HTTP ${res.status} — is ${baseUrl()} reachable?`);
   } catch (e) {
     const stale = readCache(file); // serve last-known results rather than fail on a flaky registry
-    if (stale) { if (process.env.MCPMUX_DEBUG) console.error("[registry] fetch failed, serving stale cache:", (e as Error).message); return stale; }
+    if (stale) { if (process.env.MDUCT_DEBUG) console.error("[registry] fetch failed, serving stale cache:", (e as Error).message); return stale; }
     if ((e as Error)?.name === "TimeoutError")
       throw new Error(`registry timed out after ${TIMEOUT_MS / 1000}s — it rate-limits, wait a moment and retry`);
     throw e;
@@ -108,7 +108,7 @@ export async function searchRegistry(query: string): Promise<RegistryHit[]> {
 }
 
 /**
- * Map a registry hit to a mux ServerCfg. Preference: remote (http) → npm/pypi
+ * Map a registry hit to a mduct ServerCfg. Preference: remote (http) → npm/pypi
  * package (stdio). Required env vars land in cfg.env as ${VAR} references —
  * the user provides the value via environment, never as a literal in the file.
  */
@@ -120,13 +120,13 @@ export function toServerCfg(hit: RegistryHit): { cfg: ServerCfg; requiredEnv: st
 
   const pkg = hit.entry.packages?.find((p) => p.registryType === "npm")
     ?? hit.entry.packages?.find((p) => p.registryType === "pypi");
-  if (!pkg) throw new Error(`"${hit.ref}" has no usable install method (no http remote, no npm/pypi package) — add it manually: mux add <name> -- <command…>`);
+  if (!pkg) throw new Error(`"${hit.ref}" has no usable install method (no http remote, no npm/pypi package) — add it manually: mduct add <name> -- <command…>`);
 
   // identifier is registry-controlled → validate before it becomes argv: a leading '-' would
   // be parsed by npx/uvx as a flag (injection) (#16)
   if (!/^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i.test(pkg.identifier))
     throw new Error(`registry package identifier "${pkg.identifier}" is not a plain package name — refusing to install`);
-  // pin to the registry version so what `mux search` showed is what runs, not npx latest (#16)
+  // pin to the registry version so what `mduct search` showed is what runs, not npx latest (#16)
   const spec = pkg.version ? `${pkg.identifier}@${pkg.version}` : pkg.identifier;
 
   const required = (pkg.environmentVariables ?? []).filter((v) => v.isRequired).map((v) => v.name);

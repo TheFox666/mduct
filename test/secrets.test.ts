@@ -6,9 +6,9 @@ import { getSecret, listSecretNames, rmSecret, setSecret, secretsPath } from "..
 import { loadConfig } from "../src/shared/config";
 
 beforeEach(() => {
-  const dir = mkdtempSync(join(tmpdir(), "mux-"));
-  process.env.MCPMUX_SECRETS = join(dir, "secrets.json");
-  process.env.MCPMUX_CONFIG = join(dir, "servers.jsonc");
+  const dir = mkdtempSync(join(tmpdir(), "mduct-"));
+  process.env.MDUCT_SECRETS = join(dir, "secrets.json");
+  process.env.MDUCT_CONFIG = join(dir, "servers.jsonc");
 });
 
 describe("secret store", () => {
@@ -31,14 +31,14 @@ describe("loadConfig resolves ${VAR} against the secret store", () => {
   test("secret fills a ${VAR} that is not in the environment", () => {
     delete process.env.MY_TOKEN;
     setSecret("MY_TOKEN", "from-store");
-    writeFileSync(process.env.MCPMUX_CONFIG!, `{"servers":{"g":{"url":"https://x","headers":{"Authorization":"Bearer \${MY_TOKEN}"}}}}`);
+    writeFileSync(process.env.MDUCT_CONFIG!, `{"servers":{"g":{"url":"https://x","headers":{"Authorization":"Bearer \${MY_TOKEN}"}}}}`);
     expect(loadConfig().servers.g!.headers!.Authorization).toBe("Bearer from-store");
   });
 
   test("process.env wins over the store", () => {
     process.env.MY_TOKEN = "from-env";
     setSecret("MY_TOKEN", "from-store");
-    writeFileSync(process.env.MCPMUX_CONFIG!, `{"servers":{"g":{"command":"x","env":{"T":"\${MY_TOKEN}"}}}}`);
+    writeFileSync(process.env.MDUCT_CONFIG!, `{"servers":{"g":{"command":"x","env":{"T":"\${MY_TOKEN}"}}}}`);
     expect(loadConfig().servers.g!.env!.T).toBe("from-env");
     delete process.env.MY_TOKEN;
   });

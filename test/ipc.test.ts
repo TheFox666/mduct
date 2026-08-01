@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { request, serveIpc } from "../src/shared/ipc";
 
 test("round-trip and error propagation", async () => {
-  const sock = join(mkdtempSync(join(tmpdir(), "mux-")), "d.sock");
+  const sock = join(mkdtempSync(join(tmpdir(), "mduct-")), "d.sock");
   const srv = await serveIpc(sock, async (method, params) => {
     if (method === "add") return (params.a as number) + (params.b as number);
     throw new Error(`unknown method ${method}`);

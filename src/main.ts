@@ -3,12 +3,12 @@ import { isTransportError, request, socketPath } from "./shared/ipc";
 import { parseArgs, printResult } from "./cli/format";
 
 function helpText(): string {
-  return `mcpmux — one CLI in front of every MCP server + CLI tool.
-Tool schemas stay OUT of your model context; you call them on demand through mux.
+  return `mduct — one CLI in front of every MCP server + CLI tool.
+Tool schemas stay OUT of your model context; you call them on demand through mduct.
 A background daemon keeps connections (and OAuth sessions) warm between calls.
 
 USAGE
-  mux <command> [args]
+  mduct <command> [args]
 
 CALL & RUN
   call <server> <tool> [key=value …]   invoke an MCP tool. key=value = scalar (coerced);
@@ -47,36 +47,36 @@ DAEMON & SETUP
   logs [server]                        recent daemon activity (per server if named)
   shadow                               shadow nudges vs follow-up calls (did the redirect convert?)
   daemon [--stop | --install]          run in foreground / stop / install a systemd user unit
-  hook install claude [--remove]       inject \`mux index\` at session start + redirect mcp__* calls
-  doctor                               report MCP servers attached directly that mux already serves
+  hook install claude [--remove]       inject \`mduct index\` at session start + redirect mcp__* calls
+  doctor                               report MCP servers attached directly that mduct already serves
   config [compact on|off]              show / set per-instance defaults (e.g. compact output)
   help                                 this help
 
 INSTANCES
-  A named instance is one env var: MCPMUX_PROFILE=<name> → ~/.config/mcpmux-<name>/ with its own
+  A named instance is one env var: MDUCT_PROFILE=<name> → ~/.config/mduct-<name>/ with its own
   config, secrets, auth and daemon socket (mirrors ~/.claude vs ~/.claude-<profile>).
-  No profile → the default ~/.config/mcpmux/. \`mux status\` shows which instance answered.
+  No profile → the default ~/.config/mduct/. \`mduct status\` shows which instance answered.
 
 PIPING (keep big outputs OUT of your context — lossless)
   --json emits ONLY the JSON payload (prose stripped), so \`| jq\` works on any
   server; only the filtered result lands in your context, the full blob never does.
   (--json also bypasses the oversized-list guard, since you're slimming it yourself.)
     # 20 issues as a few fields each, not full bodies (measured: ~13.7k → ~1.1k chars):
-    mux call linear-server list_issues limit=20 --json | jq -c '.issues|map({id,title,status})'
+    mduct call linear-server list_issues limit=20 --json | jq -c '.issues|map({id,title,status})'
     # GitLab prefixes prose ("Found N …") — --json strips it so this still pipes clean:
-    mux call gitlab list_merge_requests project_id=grp/proj state=opened --json | jq -c 'map({iid,title,web_url})'
+    mduct call gitlab list_merge_requests project_id=grp/proj state=opened --json | jq -c 'map({iid,title,web_url})'
     # don't know the shape? peek once, then project the fields you need:
-    mux call <server> <tool> --json | jq 'if type=="array" then .[0] else . end | keys'
+    mduct call <server> <tool> --json | jq 'if type=="array" then .[0] else . end | keys'
     # combine calls — list, then fetch each (project the second call too):
-    mux call <server> list_x --json | jq -r '.[].id' | while read i; do mux call <server> get_x id=$i --json | jq -c '{id,title}'; done
+    mduct call <server> list_x --json | jq -r '.[].id' | while read i; do mduct call <server> get_x id=$i --json | jq -c '{id,title}'; done
 
 EXAMPLES
-  mux call gitlab list_issues state=opened labels:='["bug"]'
-  mux call hive search_code query="parseArgs" --timeout 30
-  mux run kubectl get pods -n zep
-  echo "\$TOKEN" | mux secret set GITLAB_PAT
-  mux add com.linear/mcp --as linear
-  MCPMUX_PROFILE=office mux servers
+  mduct call gitlab list_issues state=opened labels:='["bug"]'
+  mduct call gitlab search_repositories search="parser" --timeout 30
+  mduct run kubectl get pods -n default
+  echo "\$TOKEN" | mduct secret set GITLAB_PAT
+  mduct add com.linear/mcp --as linear
+  MDUCT_PROFILE=office mduct servers
 
 Config: ${configPath()}`;
 }
@@ -112,7 +112,7 @@ async function daemonRequest(method: string, params: unknown, timeoutMs?: number
       try { return await request(sock, method, params, timeoutMs); }
       catch (e2) { if (!isTransportError(e2)) throw e2; /* daemon up, real error — surface it (N3) */ }
     }
-    throw new Error(`daemon did not come up on ${sock} — try: mux daemon (foreground) to see why`);
+    throw new Error(`daemon did not come up on ${sock} — try: mduct daemon (foreground) to see why`);
   }
 }
 
@@ -122,9 +122,9 @@ async function callErrorHint(server: string, tool: string): Promise<string> {
     const { toolSignature } = await import("./cli/format");
     const tools = (await daemonRequest("tools", { server })) as { name: string; inputSchema?: unknown }[];
     const t = tools.find((x) => x.name === tool);
-    if (t) return `\n  expected: ${tool}${toolSignature(t.inputSchema)}  (full schema: mux schema ${server} ${tool})`;
+    if (t) return `\n  expected: ${tool}${toolSignature(t.inputSchema)}  (full schema: mduct schema ${server} ${tool})`;
     const near = tools.map((x) => x.name).filter((n) => n.includes(tool) || tool.includes(n)).slice(0, 5);
-    return `\n  no tool "${tool}" on "${server}"${near.length ? ` — did you mean: ${near.join(", ")}` : ""}  (list: mux tools ${server})`;
+    return `\n  no tool "${tool}" on "${server}"${near.length ? ` — did you mean: ${near.join(", ")}` : ""}  (list: mduct tools ${server})`;
   } catch {
     return ""; // hint is best-effort; never mask the original error
   }
@@ -146,7 +146,7 @@ async function main(): Promise<number> {
       const raw = boolFlag(argv, "--raw");
       const jsonOut = boolFlag(argv, "--json"); // emit only the JSON payload (prose stripped) — clean to pipe
       const full = boolFlag(argv, "--full"); // bypass the size guard: dump it all (human-readable)
-      // compact: explicit --compact/--no-compact wins; otherwise the config default (mux config compact on)
+      // compact: explicit --compact/--no-compact wins; otherwise the config default (mduct config compact on)
       const noCompact = boolFlag(argv, "--no-compact");
       const compactFlag = boolFlag(argv, "--compact");
       const defaults = loadConfig().defaults;
@@ -158,7 +158,7 @@ async function main(): Promise<number> {
       if (argsJson === "-") argsJson = await new Response(Bun.stdin.stream()).text();
       else if (argsJson?.startsWith("@")) { const { readFileSync } = await import("node:fs"); argsJson = readFileSync(argsJson.slice(1), "utf8"); }
       const [server, tool, ...pairs] = argv;
-      if (!server || !tool) { console.error("usage: mux call <server> <tool> [key=value ...] — see: mux servers"); return 1; }
+      if (!server || !tool) { console.error("usage: mduct call <server> <tool> [key=value ...] — see: mduct servers"); return 1; }
       let timeoutMs: number | undefined;
       if (timeout !== undefined) {
         const n = Number(timeout);
@@ -186,7 +186,7 @@ async function main(): Promise<number> {
     case "tools": {
       const { toolSignature } = await import("./cli/format");
       const tools = (await daemonRequest("tools", { server: argv[0] })) as { name: string; description?: string; inputSchema?: unknown }[];
-      // name + arg signature up front so you see calls AND args without a separate `mux schema`
+      // name + arg signature up front so you see calls AND args without a separate `mduct schema`
       for (const t of tools) console.log(`${(t.name + toolSignature(t.inputSchema)).padEnd(34)} — ${(t.description ?? "").split("\n")[0]}`);
       return 0;
     }
@@ -230,7 +230,7 @@ async function main(): Promise<number> {
     case "config": {
       const cfg = loadConfig();
       if (argv.length === 0) {
-        console.log(`compact:   ${cfg.defaults?.compact ? "on" : "off"}   (minify JSON output of \`mux call\`)`);
+        console.log(`compact:   ${cfg.defaults?.compact ? "on" : "off"}   (minify JSON output of \`mduct call\`)`);
         console.log(`warnAbove: ${cfg.defaults?.warnAbove ? `${cfg.defaults.warnAbove} chars` : "off"}   (warn + suggest a jq projection instead of dumping an oversized list; --full bypasses)`);
         return 0;
       }
@@ -249,7 +249,7 @@ async function main(): Promise<number> {
         console.log(`warnAbove default → ${n} chars`);
         return 0;
       }
-      console.error("usage: mux config                  # show defaults\n       mux config compact on|off       # minify JSON output by default\n       mux config warnAbove <chars|off> # guard against oversized dumps (e.g. 25000)");
+      console.error("usage: mduct config                  # show defaults\n       mduct config compact on|off       # minify JSON output by default\n       mduct config warnAbove <chars|off> # guard against oversized dumps (e.g. 25000)");
       return 1;
     }
     case "auth": {
@@ -262,7 +262,7 @@ async function main(): Promise<number> {
       if (sub === "install" && argv[0] === "claude") { argv.shift(); return hookInstall(argv); }
       if (sub === "run" && argv[0] === "session-start") return hookRunSessionStart();
       if (sub === "run" && argv[0] === "pre-tool-use") return await hookRunPreToolUse();
-      console.error("usage: mux hook install claude [--settings <file>] [--remove] | mux hook run session-start|pre-tool-use");
+      console.error("usage: mduct hook install claude [--settings <file>] [--remove] | mduct hook run session-start|pre-tool-use");
       return 1;
     }
     case "doctor": {
@@ -298,7 +298,7 @@ async function main(): Promise<number> {
       const sock = socketPath();
       let up = false;
       try { up = (await request(sock, "ping", {}, 1500)) === "pong"; } catch { /* down */ }
-      // print the full instance identity so it's obvious WHICH mux (personal vs office etc.)
+      // print the full instance identity so it's obvious WHICH mduct (personal vs office etc.)
       console.log(`daemon:  ${up ? "up" : "down (lazy — autostarts on the next call)"}`);
       console.log(`socket:  ${sock}`);
       console.log(`config:  ${configPath()}`);

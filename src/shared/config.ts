@@ -7,7 +7,7 @@ export { configPath } from "./paths"; // re-export so existing `from "./config"`
 
 /**
  * "This call could have been mine." The server declares which other tool calls it shadows and what
- * to say instead; mux only matches and quotes. `pathIn` narrows to where the server is useful
+ * to say instead; mduct only matches and quotes. `pathIn` narrows to where the server is useful
  * (an index only shadows greps into repos it has indexed).
  */
 export type ShadowRule = {
@@ -24,7 +24,7 @@ export type ServerCfg = {
   shadow?: ShadowRule[];
   idleTtlMin?: number; note?: string; disabled?: boolean;
 };
-/** A CLI capability (playwright, kubectl, aws): invoked via `mux run <name>` with its env/wrapping. */
+/** A CLI capability (playwright, kubectl, aws): invoked via `mduct run <name>` with its env/wrapping. */
 export type ToolCfg = {
   run: string; args?: string[]; env?: Record<string, string>;
   check?: string; setup?: string; note?: string; disabled?: boolean;

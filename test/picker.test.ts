@@ -4,7 +4,7 @@ import type { Config } from "../src/shared/config";
 import type { RegistryHit } from "../src/shared/registry";
 
 const cfg: Config = {
-  servers: { gitlab: { url: "https://x", note: "GL" }, hive: { command: "bun", note: "KB" } },
+  servers: { gitlab: { url: "https://x", note: "GL" }, notes: { command: "bun", note: "Notes" } },
   tools: { kubectl: { run: "kubectl", note: "k8s" } },
 };
 const hits: RegistryHit[] = [
@@ -16,7 +16,7 @@ const hits: RegistryHit[] = [
 describe("pickerRows", () => {
   test("installed servers + tools come first, marked installed", () => {
     const rows = pickerRows(cfg, []);
-    expect(rows.map((r) => r.name)).toEqual(["gitlab", "hive", "kubectl"]);
+    expect(rows.map((r) => r.name)).toEqual(["gitlab", "notes", "kubectl"]); // servers in config order, then tools
     expect(rows.every((r) => r.installed)).toBe(true);
     expect(rows.find((r) => r.name === "kubectl")!.kind).toBe("tool");
   });

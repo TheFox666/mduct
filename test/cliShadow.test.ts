@@ -9,7 +9,7 @@ const RULE = {
   tool: ["Grep"],
   bash: "\\b(grep|rg|find)\\b",
   pathIn: ["/repo/indexed"],
-  hint: "mux call idx search_code query=…",
+  hint: "mduct call idx search_code query=…",
 };
 const cfg = { servers: { idx: { command: "x", shadow: [RULE] } }, tools: {} } as unknown as Config;
 
@@ -54,13 +54,13 @@ test("conversion: a nudge counts once, and only a later call in the SAME session
 
 // --- the behaviour that matters: deny ONCE, then get out of the way -------------------------
 
-const dir = mkdtempSync(join(tmpdir(), "mux-shadow-"));
-const env = { ...process.env, MCPMUX_CONFIG: join(dir, "servers.jsonc"), MCPMUX_CACHE: join(dir, "cache") };
-writeFileSync(env.MCPMUX_CONFIG!, JSON.stringify({
+const dir = mkdtempSync(join(tmpdir(), "mduct-shadow-"));
+const env = { ...process.env, MDUCT_CONFIG: join(dir, "servers.jsonc"), MDUCT_CACHE: join(dir, "cache") };
+writeFileSync(env.MDUCT_CONFIG!, JSON.stringify({
   servers: {
     idx: {
       command: process.execPath, args: ["test/fixture-server.ts"], note: "index",
-      shadow: [{ tool: ["Grep"], bash: "\\bgrep\\b", pathIn: [dir], hint: "mux call idx search_code query=…" }],
+      shadow: [{ tool: ["Grep"], bash: "\\bgrep\\b", pathIn: [dir], hint: "mduct call idx search_code query=…" }],
     },
   },
 }));
@@ -80,7 +80,7 @@ test("first shadowed grep is redirected with the server's own hint", async () =>
   expect(r.code).toBe(0);
   const d = JSON.parse(r.out);
   expect(d.hookSpecificOutput.permissionDecision).toBe("deny");
-  expect(d.hookSpecificOutput.permissionDecisionReason).toContain("mux call idx search_code");
+  expect(d.hookSpecificOutput.permissionDecisionReason).toContain("mduct call idx search_code");
   // the message states the bucket state and that the tool is not banned
   expect(d.hookSpecificOutput.permissionDecisionReason).toContain("0/1 Hinweise übrig");
   expect(d.hookSpecificOutput.permissionDecisionReason).toContain("nicht gesperrt");
@@ -94,8 +94,8 @@ test("the SECOND identical grep in that session runs untouched — a redirect, n
   expect(other.out.trim()).not.toBe("");
 });
 
-test("a mux call is logged as the conversion signal, never denied", async () => {
-  const r = await hook({ tool_name: "Bash", tool_input: { command: "mux call idx search_code query=x" }, cwd: dir, session_id: "s-conv" });
+test("a mduct call is logged as the conversion signal, never denied", async () => {
+  const r = await hook({ tool_name: "Bash", tool_input: { command: "mduct call idx search_code query=x" }, cwd: dir, session_id: "s-conv" });
   expect(r.out.trim()).toBe("");
   const p = Bun.spawn([process.execPath, "src/main.ts", "shadow"], { env, stdout: "pipe" });
   const out = await new Response(p.stdout).text();
@@ -112,9 +112,9 @@ test("SessionStart warns when the installed matcher does not cover declared rule
   const settings = join(dir, "settings.json");
   const withEnv = (matcher: string | null) => {
     writeFileSync(settings, JSON.stringify(matcher === null ? {} : {
-      hooks: { PreToolUse: [{ matcher, hooks: [{ type: "command", command: "mux hook run pre-tool-use" }] }] },
+      hooks: { PreToolUse: [{ matcher, hooks: [{ type: "command", command: "mduct hook run pre-tool-use" }] }] },
     }));
-    return { ...env, MCPMUX_CLAUDE_SETTINGS: settings };
+    return { ...env, MDUCT_CLAUDE_SETTINGS: settings };
   };
   const start = async (e: Record<string, string>) => {
     const p = Bun.spawn([process.execPath, "src/main.ts", "hook", "run", "session-start"], { env: e, stdout: "pipe", stderr: "pipe" });

@@ -3,7 +3,7 @@ import { loadConfig } from "../shared/config";
 import { FileOAuthProvider } from "../daemon/oauthProvider";
 
 /**
- * `mux auth <server>` — interactive OAuth for an http server. Runs the flow once: prints the
+ * `mduct auth <server>` — interactive OAuth for an http server. Runs the flow once: prints the
  * authorization URL, captures the redirect on a local callback port, exchanges the code, and
  * persists tokens. The daemon refreshes them automatically thereafter.
  */
@@ -13,7 +13,7 @@ export async function cmdAuth(argv: string[]): Promise<number> {
   const server = name ? cfg.servers[name] : undefined;
   if (!name || !server) {
     const http = Object.entries(cfg.servers).filter(([, s]) => s.url).map(([n]) => n).join(", ") || "(none)";
-    console.error(`usage: mux auth <server> — http servers: ${http}`);
+    console.error(`usage: mduct auth <server> — http servers: ${http}`);
     return 1;
   }
   if (!server.url) { console.error(`"${name}" is a stdio server — OAuth applies to http servers only`); return 1; }
@@ -27,7 +27,7 @@ export async function cmdAuth(argv: string[]): Promise<number> {
       const code = new URL(req.url).searchParams.get("code");
       if (!code) return new Response("missing ?code", { status: 400 });
       resolveCode(code);
-      return new Response("mcpmux: authorized — you can close this tab.", { headers: { "content-type": "text/plain" } });
+      return new Response("mduct: authorized — you can close this tab.", { headers: { "content-type": "text/plain" } });
     },
   });
   const redirect = `http://127.0.0.1:${cbServer.port}/cb`;
@@ -38,7 +38,7 @@ export async function cmdAuth(argv: string[]): Promise<number> {
     const result = await auth(provider, { serverUrl: server.url });
     if (result === "AUTHORIZED") { console.log(`${name}: already authorized`); return 0; }
     if (!provider.pendingAuthUrl) { console.error("OAuth server did not provide an authorization URL"); return 1; }
-    console.log(`\nOpen this URL to authorize mcpmux for "${name}":\n\n  ${provider.pendingAuthUrl.toString()}\n\nWaiting for the redirect…`);
+    console.log(`\nOpen this URL to authorize mduct for "${name}":\n\n  ${provider.pendingAuthUrl.toString()}\n\nWaiting for the redirect…`);
 
     const code = await Promise.race([
       codePromise,
