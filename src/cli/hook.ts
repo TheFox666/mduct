@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { discoverClaudeSources } from "../shared/claudeConfigs";
 import { loadConfig } from "../shared/config";
 import { renderIndex } from "./format";
@@ -25,9 +25,21 @@ function selfExec(extra: string[]): { command: string; args: string[] } {
     : { command: process.execPath, args: [entry, ...extra] };
 }
 
-/** Claude reads user-scope MCP servers from ~/.claude.json — a different file from settings.json. */
-function mcpConfigPath(): string {
-  return process.env.MDUCT_CLAUDE_MCP_CONFIG ?? join(homedir(), ".claude.json");
+/**
+ * Where user-scope MCP servers live: `~/.claude.json`, a different file from settings.json.
+ *
+ * Derived from the settings path rather than resolved independently, because `--settings` means
+ * "operate on THAT Claude installation" and a second path that ignores it is a trap. It was one:
+ * a test running `hook install --remove --settings <tmpdir>` unregistered the real catalogue from
+ * the developer's own home. Twice, in different forms. An explicit --settings now keeps everything
+ * it touches in one place.
+ */
+function mcpConfigPath(settingsPath?: string): string {
+  if (process.env.MDUCT_CLAUDE_MCP_CONFIG) return process.env.MDUCT_CLAUDE_MCP_CONFIG;
+  const dflt = join(homedir(), ".claude", "settings.json");
+  return settingsPath && settingsPath !== dflt
+    ? join(dirname(settingsPath), ".claude.json")
+    : join(homedir(), ".claude.json");
 }
 
 function catalogueWanted(): boolean {
@@ -48,8 +60,8 @@ function mcpRegistered(): boolean {
  * Two files, one install: hooks go to settings.json, MCP servers to .claude.json. Leaving the
  * second to the user means an install that half-works and a catalogue nobody sees.
  */
-function syncMcpRegistration(remove: boolean): string | null {
-  const p = mcpConfigPath();
+function syncMcpRegistration(remove: boolean, settingsPath: string): string | null {
+  const p = mcpConfigPath(settingsPath);
   let j: { mcpServers?: Record<string, unknown> } & Record<string, unknown> = {};
   if (existsSync(p)) {
     try { j = JSON.parse(readFileSync(p, "utf8")) as typeof j; }
@@ -232,7 +244,7 @@ export function hookInstall(argv: string[]): number {
   writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n");
   renameSync(tmp, settingsPath);
   console.log(`${remove ? "removed from" : "installed into"}: ${settingsPath}`);
-  const mcp = syncMcpRegistration(remove);
+  const mcp = syncMcpRegistration(remove, settingsPath);
   if (mcp) console.log(mcp);
   if (!remove) console.log("Hinweis: wirkt ab der nächsten Claude-Session.");
   return 0;

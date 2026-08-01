@@ -20,7 +20,7 @@ test("hook install preserves a foreign hook that shares the same array (N5)", as
       PreToolUse: [{ hooks: [] }], // malformed-ish entry with empty hooks array must not crash
     },
   }));
-  const env = { ...process.env, MDUCT_CONFIG: join(dir, "servers.jsonc") };
+  const env = { ...process.env, MDUCT_CONFIG: join(dir, "servers.jsonc"), MDUCT_CLAUDE_MCP_CONFIG: join(dir, ".claude.json") };
   const r = await mduct(env, null, "hook", "install", "claude", "--settings", settings);
   expect(r.code).toBe(0);
   const s = JSON.parse(readFileSync(settings, "utf8"));

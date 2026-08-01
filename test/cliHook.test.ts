@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 const dir = mkdtempSync(join(tmpdir(), "mduct-"));
@@ -115,3 +115,21 @@ describe("hook install also registers the MCP catalogue", () => {
     expect(registered()).toBeUndefined();
   }, 30_000);
 });
+
+test("an explicit --settings never reaches the real ~/.claude.json", async () => {
+  // the bug this pins, three times over: a test ran `hook install --remove --settings <tmp>` and
+  // unregistered the catalogue from the developer's own home. --settings now scopes everything.
+  const d = mkdtempSync(join(tmpdir(), "mduct-scope-"));
+  const cfgPath = join(d, "servers.jsonc");
+  writeFileSync(cfgPath, JSON.stringify({ servers: { kb: { command: "true", mcpCatalog: true } } }));
+  // deliberately WITHOUT MDUCT_CLAUDE_MCP_CONFIG — the isolation must come from --settings alone
+  const env = { ...process.env, MDUCT_CONFIG: cfgPath };
+  delete (env as Record<string, string | undefined>).MDUCT_CLAUDE_MCP_CONFIG;
+  const p = Bun.spawn([process.execPath, "src/main.ts", "hook", "install", "claude", "--settings", join(d, "settings.json")],
+    { env, stdout: "pipe", stderr: "pipe" });
+  const out = await new Response(p.stdout).text();
+  await p.exited;
+  expect(out).toContain(join(d, ".claude.json"));       // next to the settings it was given
+  expect(out).not.toContain(join(homedir(), ".claude.json"));
+  expect(existsSync(join(d, ".claude.json"))).toBe(true);
+}, 30_000);
