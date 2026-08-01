@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { cacheDir } from "./paths";
+import { cacheDir, configPath } from "./paths";
 
 /**
  * Tool signatures, on disk, per server.
@@ -16,8 +17,21 @@ import { cacheDir } from "./paths";
  */
 export type CachedTool = { name: string; sig: string };
 
+/**
+ * Namespaced by the CONFIG the entries came from, not just by the instance.
+ *
+ * Keying on the server name alone was wrong in a way that poisons the prompt: any run with a
+ * different MDUCT_CONFIG — a throwaway benchmark, a test — writes its servers into the same
+ * directory, and a fixture server that happens to be called "gitlab" then advertises `boom` and
+ * `admin_delete` in the index of the real one. An index that lies is worse than no index.
+ */
 function dir(): string {
-  return join(cacheDir(), "tools");
+  let key = "default";
+  try {
+    const h = createHash("sha1").update(configPath()).digest("hex").slice(0, 10);
+    key = h;
+  } catch { /* fall back to a shared bucket rather than losing the cache entirely */ }
+  return join(cacheDir(), "tools", key);
 }
 
 function file(server: string): string {
