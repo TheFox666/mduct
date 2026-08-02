@@ -1,6 +1,6 @@
 # Contributing
 
-One maintainer, two runtime dependencies, 234 tests. That shapes what is easy to
+One maintainer, two runtime dependencies, 239 tests. That shapes what is easy to
 accept and what is not, so here is the honest version rather than the polite one.
 
 ## Before a big change, open an issue
@@ -51,6 +51,17 @@ resolve, that is the file that will tell you.
 
 Set `MDUCT_CONFIG` and `MDUCT_SOCKET` anyway. The sandbox covers defaults, and a
 test that names its own paths is easier to read than one that relies on them.
+
+## Documenting a command
+
+`mduct help` is the reference, so a command that is not in it does not exist.
+`test/cliContract.test.ts` enforces that both ways: every command, flag and
+subcommand the dispatcher compares against has to appear in the help, and every
+command the help lists has to dispatch. It also fails on German strings, which
+have shipped more than once.
+
+None of that checks whether a description is *true* — only that the thing is
+mentioned. The [Commands](../../wiki/Commands) wiki page is still hand-written.
 
 ## The loop
 

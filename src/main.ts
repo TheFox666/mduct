@@ -15,7 +15,8 @@ CALL & RUN
        [key:=<json> …]                        key:=<json> = a JSON value (arrays/objects/typed);
        [--args '<json>' | - | @file]          --args merges an object (- = stdin, @file = a file)
        [--timeout <s>] [--raw] [--json]       --raw = full envelope; --json = only the JSON payload (pipe-ready)
-       [--compact] [--full]                   --compact minifies output; --full bypasses the oversized-list guard
+       [--compact | --no-compact] [--full]    --compact minifies output (--no-compact overrides the config default);
+                                              --full bypasses the oversized-list guard
   run <tool> [args …]                  run a CLI tool (kubectl/aws/…) with its stored env/wrapping
   env <tool>                           its env as shell exports — eval "$(mduct env playwright)"
   tools <server>                       list a server's tools (compact — no schemas)
@@ -50,6 +51,7 @@ DAEMON & SETUP
   shadow                               shadow nudges vs follow-up calls (did the redirect convert?)
   daemon [--stop | --install]          run in foreground / stop / install a systemd user unit
   hook install claude|codex [--remove] inject \`mduct index\` at session start + redirect mcp__* calls
+  hook run session-start|pre-tool-use  the hook bodies themselves (a harness calls these, not you)
   doctor                               report MCP servers attached directly that mduct already serves
   config [compact on|off]              show / set per-instance defaults (e.g. compact output)
   help                                 this help

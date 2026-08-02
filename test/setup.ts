@@ -30,16 +30,27 @@ for (const k of Object.keys(process.env)) if (k.startsWith("MDUCT_")) delete pro
 // Tests that legitimately need to know where the real home was (to assert they did NOT touch it).
 process.env.MDUCT_TEST_REAL_HOME = realHome;
 
-/** Second layer: an absolute path typed by hand walks straight past the sandbox. Watch for it. */
-const watched = [
+/**
+ * Second layer: an absolute path typed by hand walks straight past the sandbox. Watch for it.
+ *
+ * Two tiers, because one of them was flaky in the only place it runs often. Nothing writes a
+ * config file behind your back, so a change there is a test and the run fails. The logs and the
+ * tool cache are written by ANY live mduct on the machine — a colleague's shell, an agent's shadow
+ * nudge — and failing on those made the guard cry wolf on a developer box. Those warn instead.
+ * A guard that is red for innocent reasons gets ignored, which costs more than it catches.
+ */
+const HARD = [
   join(realHome, ".config/mduct/servers.jsonc"),
   join(realHome, ".config/mduct/secrets.json"),
-  join(realHome, ".cache/mduct/shadow.jsonl"),
-  join(realHome, ".cache/mduct/tools"),
   join(realHome, ".claude/settings.json"),
   join(realHome, ".claude.json"),
   join(realHome, ".codex/config.toml"),
 ];
+const SOFT = [
+  join(realHome, ".cache/mduct/shadow.jsonl"),
+  join(realHome, ".cache/mduct/tools"),
+];
+const watched = [...HARD, ...SOFT];
 const fingerprint = () =>
   watched.map((p) => {
     try { const s = statSync(p); return `${p}:${s.size}:${s.mtimeMs}`; } catch { return `${p}:absent`; }
@@ -52,11 +63,13 @@ afterAll(() => {
   const after = fingerprint();
   const touched = watched.filter((_, i) => before[i] !== after[i]);
   before = after; // report once, then keep going — the next file gets a clean baseline
-  if (touched.length) {
+  const soft = touched.filter((p) => SOFT.includes(p));
+  if (soft.length) console.error(`\n⚠ real state changed during this file: ${soft.join(", ")} — a test, or just live mduct use on this machine.`);
+  const hard = touched.filter((p) => HARD.includes(p));
+  if (hard.length) {
     throw new Error(
-      `a test in this file wrote to the developer's real state: ${touched.join(", ")}\n` +
-      "Find the absolute path and point it at a tmpdir — the sandbox home only covers defaults.\n" +
-      "(If you were driving mduct in another terminal while the suite ran, that can trip this too.)",
+      `a test in this file wrote to the developer's real config: ${hard.join(", ")}\n` +
+      "Find the absolute path and point it at a tmpdir — the sandbox home only covers defaults.",
     );
   }
 });
