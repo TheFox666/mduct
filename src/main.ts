@@ -49,7 +49,7 @@ DAEMON & SETUP
   logs [server]                        recent daemon activity (per server if named)
   shadow                               shadow nudges vs follow-up calls (did the redirect convert?)
   daemon [--stop | --install]          run in foreground / stop / install a systemd user unit
-  hook install claude [--remove]       inject \`mduct index\` at session start + redirect mcp__* calls
+  hook install claude|codex [--remove] inject \`mduct index\` at session start + redirect mcp__* calls
   doctor                               report MCP servers attached directly that mduct already serves
   config [compact on|off]              show / set per-instance defaults (e.g. compact output)
   help                                 this help
@@ -328,10 +328,10 @@ async function main(): Promise<number> {
       // the only honest answer to "is the redirect worth its friction" is the log
       const { conversion, readEvents, logPath } = await import("./cli/shadow");
       const rows = conversion();
-      if (!rows.length) { console.log(`keine shadow-Events bisher (${logPath()})`); return 0; }
+      if (!rows.length) { console.log(`no shadow events yet (${logPath()})`); return 0; }
       console.log("server         nudges  converted");
       for (const r of rows) console.log(`  ${r.server.padEnd(12)} ${String(r.nudges).padStart(6)} ${String(r.converted).padStart(10)}`);
-      console.log(`\n${readEvents().length} Events — ${logPath()}`);
+      console.log(`\n${readEvents().length} events — ${logPath()}`);
       return 0;
     }
     case "status": {

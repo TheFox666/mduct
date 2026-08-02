@@ -374,6 +374,7 @@ mduct doctor                           # servers attached directly AND served he
 
 | | |
 |---|---|
+| [Commands](../../wiki/Commands) | every command and flag, with exit codes |
 | [Cookbook](../../wiki/Cookbook) | jq pipelines, batching, CI, read-only agents, a second instance |
 | [Configuration](../../wiki/Configuration) | every field, with defaults and failure modes |
 | [Arguments & output](../../wiki/Arguments-and-output) | argument forms, the output contract, exit codes |
