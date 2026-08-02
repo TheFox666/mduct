@@ -76,3 +76,33 @@ test("no German in user-facing strings", () => {
   }
   expect(offenders).toEqual([]);
 });
+
+/**
+ * Conventions a shell user assumes without reading anything. Each of these was broken.
+ */
+test("--name=value is read as a flag, not passed to the tool", () => {
+  // The dispatcher must strip it; parseArgs is the backstop that refuses whatever survives.
+  expect(src).toContain("a.startsWith(`${name}=`)");
+});
+
+test("a mistyped option is an error, not a tool argument", async () => {
+  const { parseArgs } = await import("../src/cli/format");
+  expect(() => parseArgs(["--jsonn"])).toThrow(/unknown option/);
+  expect(() => parseArgs(["-x"])).toThrow(/unknown option/);
+  expect(() => parseArgs(["--as=x"])).toThrow(/unknown option/);
+  expect(parseArgs(["text=hi"])).toEqual({ text: "hi" }); // and a real argument still parses
+});
+
+test("--version prints a version, and asking for help is not an error", () => {
+  const run = (...a: string[]) => {
+    const p = Bun.spawnSync([process.execPath, "src/main.ts", ...a]);
+    return { out: p.stdout.toString().trim(), code: p.exitCode };
+  };
+  const v = run("--version");
+  expect(v.code).toBe(0);
+  expect(v.out).toMatch(/^\d+\.\d+\.\d+$/);
+  expect(v.out).toBe(JSON.parse(readFileSync("package.json", "utf8")).version);
+  expect(run("-V").out).toBe(v.out);
+  for (const h of ["-h", "--help", "help"]) expect(run(h).code).toBe(0);
+  expect(run("nosuchcommand").code).toBe(1); // an unknown command still is one
+});

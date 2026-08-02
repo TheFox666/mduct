@@ -1,6 +1,10 @@
 import { configPath, loadConfig } from "./shared/config";
 import { isTransportError, request, socketPath } from "./shared/ipc";
 import { parseArgs, printResult } from "./cli/format";
+import pkg from "../package.json" with { type: "json" };
+
+/** Bundled at build time — a compiled binary has no package.json to read. */
+const VERSION = (pkg as { version: string }).version;
 
 function helpText(): string {
   return `mduct — one CLI in front of every MCP server + CLI tool.
@@ -55,6 +59,7 @@ DAEMON & SETUP
   doctor                               report MCP servers attached directly that mduct already serves
   config [compact on|off]              show / set per-instance defaults (e.g. compact output)
   help                                 this help
+  --version                            print the version and exit
 
 INSTANCES
   A named instance is one env var: MDUCT_PROFILE=<name> → ~/.config/mduct-<name>/ with its own
@@ -85,11 +90,18 @@ EXAMPLES
 Config: ${configPath()}`;
 }
 
+/**
+ * `--name value` AND `--name=value`. Both are muscle memory; only the first used to work, and the
+ * second was not an error — `--timeout=5` became a TOOL argument called `--timeout`, so the call
+ * went out with an extra field and no timeout, quietly.
+ */
 function flag(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(name);
-  if (i < 0) return undefined;
-  const v = argv[i + 1];
-  argv.splice(i, 2);
+  if (i >= 0) { const v = argv[i + 1]; argv.splice(i, 2); return v; }
+  const j = argv.findIndex((a) => a.startsWith(`${name}=`));
+  if (j < 0) return undefined;
+  const v = argv[j]!.slice(name.length + 1);
+  argv.splice(j, 1);
   return v;
 }
 function boolFlag(argv: string[], name: string): boolean {
@@ -143,6 +155,10 @@ async function callErrorHint(server: string, tool: string): Promise<string> {
 async function main(): Promise<number> {
   const argv = process.argv.slice(2);
   const cmd = argv.shift() ?? "help";
+  // Conventional entry points, handled before the dispatcher: asking a binary what it is must not
+  // depend on knowing its subcommands, and asking for help is not an error.
+  if (cmd === "--version" || cmd === "-V") { console.log(VERSION); return 0; }
+  if (cmd === "-h" || cmd === "--help") { console.log(helpText()); return 0; }
   switch (cmd) {
     case "daemon": {
       if (boolFlag(argv, "--stop")) { await request(socketPath(), "shutdown", {}, 3000).catch(() => {}); return 0; }

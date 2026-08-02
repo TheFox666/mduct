@@ -254,6 +254,11 @@ export function toolSignature(inputSchema: unknown): string {
 export function parseArgs(pairs: string[], argsJson?: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const p of pairs) {
+    // A leading dash means an option, never an argument — whether or not it carries a value. Both
+    // shapes reached here before: `--jsonn` was reported as a bad *argument*, pointing at the wrong
+    // fix, and `--timeout=5` was accepted as a tool field called "--timeout", so the call went out
+    // with an extra key and no timeout and nothing on stderr.
+    if (p.startsWith("-")) throw new Error(`unknown option "${p.split("=")[0]}" — see: mduct help`);
     const eq = p.indexOf("=");
     if (eq < 1) throw new Error(`bad argument "${p}" — use key=value, key:=<json>, or --args '<json>'`);
     const rawKey = p.slice(0, eq);
