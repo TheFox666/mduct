@@ -3,14 +3,11 @@ import { join } from "node:path";
 import { home } from "../src/shared/paths";
 
 /**
- * The suite's own guard rail. Three leaks shipped before this existed — a test unregistered the
- * real MCP catalogue from ~/.claude.json, a test drained the real shadow token bucket, a test set
- * an env var at module scope and poisoned a later file. Each was a path resolving to the
- * developer's home while everyone believed it had been isolated. Assert it instead of believing it.
+ * The sandbox from test/setup.ts, asserted rather than assumed.
  *
- * These checks strip MDUCT_* themselves rather than demanding a clean global environment: bun
+ * These checks strip MDUCT_* themselves instead of demanding a clean global environment: bun
  * evaluates every test file in one process, so what other files leave behind is not something a
- * single test can police. What it CAN prove is that nothing reaches the real home.
+ * single test can police. What it can prove is that nothing reaches the real home.
  */
 
 const realHome = process.env.MDUCT_TEST_REAL_HOME!;
@@ -66,9 +63,8 @@ test("a spawned mduct reads the sandbox, not the real config", () => {
 });
 
 test("a test cannot reach a running daemon of the developer's", () => {
-  // Three real daemons live under /run/user/<uid>/. A test that forgets MDUCT_SOCKET used to talk
-  // to whichever one was up — and then proved nothing, twice, because a live daemon answered with
-  // the real config. The sandboxed XDG_RUNTIME_DIR makes that unreachable rather than unlikely.
+  // A test that forgets MDUCT_SOCKET would otherwise talk to whichever daemon is up under
+  // /run/user/<uid>/, and a live daemon answers with the real config — green, and meaningless.
   const probe = 'import("./src/shared/paths").then(p => console.log(p.socketPath()))';
   const sock = Bun.spawnSync([process.execPath, "-e", probe], { env: withoutOverrides() }).stdout.toString().trim();
   expect(sock).toStartWith(home());

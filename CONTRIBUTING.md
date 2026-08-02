@@ -42,25 +42,15 @@ This catches the two things a green suite hides: a test that asserts the wrong
 thing, and a test that would pass without the code. Both have happened in this
 repo, which is why the rule exists.
 
-Tests must not touch anything outside their own temp directory. Three separate
-bugs came from tests reaching into a real `~/.config`, `~/.claude.json` or
-`~/.cache/mduct` — each found by accident, after the fact.
+Tests must not touch anything outside their own temp directory. `test/setup.ts`
+is preloaded before every file and enforces it: `HOME` and the XDG variables
+point at a throwaway directory, every inherited `MDUCT_*` is deleted, and the
+files a test could plausibly clobber are fingerprinted, so a run that changes one
+fails. `test/isolation.test.ts` asserts those properties; if you change how paths
+resolve, that is the file that will tell you.
 
-The suite no longer relies on everyone remembering. `test/setup.ts` is preloaded
-before every file: it points `HOME` and the XDG variables at a throwaway
-directory and deletes every inherited `MDUCT_*`, so defaults resolve into a
-sandbox rather than your home. It also fingerprints the files that got hurt
-before and fails the run if one of them changes, which is the only thing that
-catches an absolute path written by hand.
-
-Two consequences worth knowing:
-
-- `test/isolation.test.ts` asserts all of it. If you change how paths resolve,
-  that file is what should tell you.
-- `MDUCT_CONFIG` alone was never isolation: without `MDUCT_SOCKET` a running
-  daemon answers and the test proves nothing. A sandboxed `XDG_RUNTIME_DIR` now
-  makes a stray daemon unreachable, but pointing both at your own temp dir is
-  still the honest way to write it.
+Set `MDUCT_CONFIG` and `MDUCT_SOCKET` anyway. The sandbox covers defaults, and a
+test that names its own paths is easier to read than one that relies on them.
 
 ## The loop
 

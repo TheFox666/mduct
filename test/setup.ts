@@ -4,14 +4,9 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 /**
- * Preloaded before every test file (see bunfig.toml). Two jobs, because review kept failing at
- * this: make the developer's own files unreachable, and notice if a test reaches them anyway.
- *
- * The history is the argument. Three separate leaks shipped: a test unregistered the real MCP
- * catalogue from ~/.claude.json, another drained the real shadow token bucket by writing to
- * ~/.cache/mduct/shadow.jsonl, a third set MDUCT_CODEX_CONFIG at module scope and poisoned a
- * later file — bun runs every test file in ONE process. Each was found by accident, after the
- * fact, and each was written by someone who believed they had isolated it.
+ * Preloaded before every test file (see bunfig.toml). Two jobs: make the developer's own files
+ * unreachable, and fail the run if a test reaches them anyway. Per-test discipline was tried and
+ * leaked three times, so this is not advisory.
  */
 
 const realHome = homedir();
@@ -28,17 +23,14 @@ process.env.XDG_CACHE_HOME = join(sandbox, ".cache");
 process.env.XDG_RUNTIME_DIR = join(sandbox, "run");
 mkdirSync(process.env.XDG_RUNTIME_DIR, { recursive: true });
 
-// A leftover MDUCT_* in the developer's shell would aim tests straight back at real state. The
-// office exports several of these.
+// A leftover MDUCT_* in the developer's shell would aim tests straight back at real state, and it
+// also crosses between files: bun evaluates them all in ONE process.
 for (const k of Object.keys(process.env)) if (k.startsWith("MDUCT_")) delete process.env[k];
 
 // Tests that legitimately need to know where the real home was (to assert they did NOT touch it).
 process.env.MDUCT_TEST_REAL_HOME = realHome;
 
-/**
- * Second layer: an absolute path hardcoded in a test would walk straight past the sandbox. So
- * fingerprint the files that actually got hurt before, and check them when the process exits.
- */
+/** Second layer: an absolute path typed by hand walks straight past the sandbox. Watch for it. */
 const watched = [
   join(realHome, ".config/mduct/servers.jsonc"),
   join(realHome, ".config/mduct/secrets.json"),
@@ -54,9 +46,8 @@ const fingerprint = () =>
   });
 let before = fingerprint();
 
-// A preload's afterAll runs after EVERY test file, so a leak is attributed to the file that caused
-// it instead of surfacing at the end of a 30-second run. (process.on("exit") looked like the
-// obvious place and never fired under the test runner — checked, not assumed.)
+// A preload's afterAll runs after EVERY test file, so the blame lands on the file that caused it.
+// (process.on("exit") never fires under the bun test runner.)
 afterAll(() => {
   const after = fingerprint();
   const touched = watched.filter((_, i) => before[i] !== after[i]);
