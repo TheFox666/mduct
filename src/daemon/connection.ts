@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -8,6 +7,7 @@ import { guardAllows } from "./guard";
 import { toolSignature } from "../cli/format";
 import { writeToolCache } from "../shared/toolCache";
 import { FileOAuthProvider } from "./oauthProvider";
+import { home } from "../shared/paths";
 
 /**
  * A child MCP server inherits the daemon's cwd unless told otherwise. The daemon is lazily
@@ -20,9 +20,9 @@ import { FileOAuthProvider } from "./oauthProvider";
  */
 function childSpawnCwd(): string | undefined {
   try {
-    return existsSync(process.cwd()) ? undefined : homedir();
+    return existsSync(process.cwd()) ? undefined : home();
   } catch {
-    return homedir();
+    return home();
   }
 }
 
@@ -116,7 +116,7 @@ export class ServerConnection {
             command: this.cfg.command,
             args: this.cfg.args ?? [],
             env: { ...process.env, ...this.cfg.env } as Record<string, string>,
-            // inherit the (live) cwd, or fall back to homedir() when it's a torn-down worktree
+            // inherit the (live) cwd, or fall back to home() when it's a torn-down worktree
             ...((): { cwd?: string } => { const cwd = childSpawnCwd(); return cwd ? { cwd } : {}; })(),
           })
         : new StreamableHTTPClientTransport(new URL(this.cfg.url!), {

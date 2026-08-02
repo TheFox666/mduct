@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { loadConfig } from "../shared/config";
 import { shadowMatcher, SHELL_TOOLS } from "./shadow";
+import { home } from "../shared/paths";
 
 /**
  * `mduct hook install codex` — the same two hooks and the same catalogue, wired into Codex.
@@ -18,7 +18,7 @@ const START = "# >>> mduct managed — do not edit inside this block >>>";
 const END = "# <<< mduct managed <<<";
 
 export function codexConfigPath(): string {
-  return process.env.MDUCT_CODEX_CONFIG ?? join(homedir(), ".codex", "config.toml");
+  return process.env.MDUCT_CODEX_CONFIG ?? join(home(), ".codex", "config.toml");
 }
 
 /** Shell-quote for a TOML basic string. */
@@ -126,7 +126,7 @@ export function installCodex(remove: boolean): number {
 
   write(p, applyBlock(existing, renderBlock(cfg)));
   console.log(`installed into: ${p}`);
-  console.log("Hinweis: wirkt ab der nächsten Codex-Session.");
+  console.log("Takes effect in the next Codex session.");
   return 0;
 }
 

@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
-import { homedir } from "node:os";
 import { readToolCache } from "../shared/toolCache";
 import { join } from "node:path";
+import { home } from "../shared/paths";
 
 /** Write to stdout SYNCHRONOUSLY and COMPLETELY (fd 1). Traps this avoids: (1) console.log is async
  *  on a pipe, so process.exit() drops the un-drained tail of a big payload; (2) a single writeSync
@@ -25,7 +25,7 @@ function emit(s: string): void {
 
 /** Private, per-invocation dir for binary content — NOT a shared, predictable /tmp path (#14). */
 function mediaDir(): string {
-  const base = process.env.XDG_RUNTIME_DIR ?? join(homedir(), ".cache", "mduct");
+  const base = process.env.XDG_RUNTIME_DIR ?? join(home(), ".cache", "mduct");
   const root = join(base, "media");
   mkdirSync(root, { recursive: true, mode: 0o700 });
   // reap prior invocations' media dirs (>1h old). Each mduct call mkdtemps a fresh dir and emits the

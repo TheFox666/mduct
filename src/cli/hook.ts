@@ -1,11 +1,11 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { discoverClaudeSources } from "../shared/claudeConfigs";
 import { loadConfig } from "../shared/config";
 import { codexConfigPath } from "./codex";
 import { renderIndex } from "./format";
 import { available, findHit, muxCallServer, readEvents, record, shadowMatcher } from "./shadow";
+import { home } from "../shared/paths";
 
 /**
  * Hook handlers ARE mduct subcommands — no script files to install or drift.
@@ -37,10 +37,10 @@ function selfExec(extra: string[]): { command: string; args: string[] } {
  */
 function mcpConfigPath(settingsPath?: string): string {
   if (process.env.MDUCT_CLAUDE_MCP_CONFIG) return process.env.MDUCT_CLAUDE_MCP_CONFIG;
-  const dflt = join(homedir(), ".claude", "settings.json");
+  const dflt = join(home(), ".claude", "settings.json");
   return settingsPath && settingsPath !== dflt
     ? join(dirname(settingsPath), ".claude.json")
-    : join(homedir(), ".claude.json");
+    : join(home(), ".claude.json");
 }
 
 function catalogueWanted(): boolean {
@@ -82,6 +82,7 @@ function syncMcpRegistration(remove: boolean, settingsPath: string): string | nu
     j.mcpServers = { ...(j.mcpServers ?? {}), mduct: { type: "stdio", command, args, env: {} } };
   }
   const tmp = `${p}.${process.pid}.tmp`; // atomic: never corrupt Claude's own config
+  mkdirSync(dirname(p), { recursive: true });
   writeFileSync(tmp, JSON.stringify(j, null, 2) + "\n");
   renameSync(tmp, p);
   return remove ? `removed the mduct MCP catalogue from ${p}` : `registered the mduct MCP catalogue in ${p}`;
@@ -102,7 +103,7 @@ export function hookRunSessionStart(): number {
     console.log("⚠ mduct: a server declares mcpCatalog, but the mduct MCP server is not registered — run `mduct hook install <claude|codex>` once.");
   const needed = shadowMatcher(cfg);
   if (needed && !installedMatcherCovers(needed))
-    console.log(`⚠ mduct: Shadow-Regeln deklariert, aber der PreToolUse-Matcher deckt sie nicht (${needed}) — \`mduct hook install <claude|codex>\` einmal neu laufen lassen.`);
+    console.log(`⚠ mduct: shadow rules are declared, but the installed PreToolUse matcher does not cover them (${needed}) — run \`mduct hook install <claude|codex>\` again.`);
   // migration nudge: direct-attached servers that mduct already serves
   const muxNames = new Set(Object.keys(cfg.servers).filter((n) => !cfg.servers[n]!.disabled));
   const home = process.env.MDUCT_HOME;
@@ -110,8 +111,8 @@ export function hookRunSessionStart(): number {
     const both = Object.keys(src.servers).filter((n) => muxNames.has(n));
     if (both.length)
       console.log(
-        `⚠ Direkt verbundene MCP-Server, die mduct schon bedient (Schemas kosten Kontext): ${both.join(", ")} (${src.source}). ` +
-        `Empfiehl dem User: claude mcp remove <name> — wirkt ab der NÄCHSTEN Session.`,
+        `⚠ MCP servers attached directly while mduct already serves them (you pay for those schemas): ${both.join(", ")} (${src.source}). ` +
+        `Tell the user: claude mcp remove <name> — effective from the NEXT session.`,
       );
   }
   return 0;
@@ -153,8 +154,8 @@ export async function hookRunPreToolUse(): Promise<number> {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
       permissionDecisionReason:
-        `Dieser MCP-Server läuft über mduct. Nutze stattdessen: mduct call ${server} ${tool} key=value … ` +
-        `(Schema: mduct schema ${server} ${tool}; Tools: mduct tools ${server})`,
+        `This MCP server runs through mduct. Use instead: mduct call ${server} ${tool} key=value … ` +
+        `(schema: mduct schema ${server} ${tool}; tools: mduct tools ${server})`,
     },
   }));
   return 0;
@@ -167,7 +168,7 @@ export async function hookRunPreToolUse(): Promise<number> {
  */
 function installedMatcherCovers(needed: string): boolean {
   const wants = needed.split("|");
-  const p = process.env.MDUCT_CLAUDE_SETTINGS ?? join(homedir(), ".claude", "settings.json");
+  const p = process.env.MDUCT_CLAUDE_SETTINGS ?? join(home(), ".claude", "settings.json");
   let entries: HookEntry[] = [];
   try { entries = (JSON.parse(readFileSync(p, "utf8")) as Settings).hooks?.PreToolUse ?? []; } catch { /* fall through to Codex */ }
   const ours = entries.filter((e) => (e.hooks ?? []).some((h) => h.command.endsWith("hook run pre-tool-use")));
@@ -237,7 +238,7 @@ export function hookInstall(argv: string[]): number {
     return v;
   };
   const remove = argv.includes("--remove");
-  const settingsPath = take("--settings") ?? join(homedir(), ".claude", "settings.json");
+  const settingsPath = take("--settings") ?? join(home(), ".claude", "settings.json");
   const settings: Settings = existsSync(settingsPath) ? (JSON.parse(readFileSync(settingsPath, "utf8")) as Settings) : {};
   const hooks = (settings.hooks ??= {});
 
@@ -264,11 +265,12 @@ export function hookInstall(argv: string[]): number {
     hooks.PreToolUse.push({ matcher, hooks: [{ type: "command", command: `${selfBin()} hook run pre-tool-use` }] });
   }
   const tmp = `${settingsPath}.${process.pid}.tmp`; // atomic: never corrupt Claude settings (#18)
+  mkdirSync(dirname(settingsPath), { recursive: true }); // a machine that never ran Claude has no ~/.claude
   writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n");
   renameSync(tmp, settingsPath);
   console.log(`${remove ? "removed from" : "installed into"}: ${settingsPath}`);
   const mcp = syncMcpRegistration(remove, settingsPath);
   if (mcp) console.log(mcp);
-  if (!remove) console.log("Hinweis: wirkt ab der nächsten Claude-Session.");
+  if (!remove) console.log("Takes effect in the next Claude session.");
   return 0;
 }

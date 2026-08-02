@@ -36,7 +36,7 @@ test("overlap report works WITHOUT a daemon and does not start one (N4)", async 
   expect(r.out).toContain("claude mcp remove fix");
   expect(r.out).toContain(home); // names the source
   expect(r.out).not.toContain("claude mcp remove other"); // non-overlapping not flagged
-  expect(r.out).toContain("Daemon läuft nicht"); // dead-server probe skipped, no autostart
+  expect(r.out).toContain("daemon is not running"); // dead-server probe skipped, no autostart
   const st = await mduct("status");
   expect(st.out).toContain("down");
 }, 30_000);

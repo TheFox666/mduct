@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { home as userHome } from "../shared/paths";
 
-export function unitPath(home = homedir()): string {
+export function unitPath(home = userHome()): string {
   return join(home, ".config", "systemd", "user", "mduct.service");
 }
 

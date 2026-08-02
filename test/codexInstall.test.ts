@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applyBlock, codexConfigPath, renderBlock } from "../src/cli/codex";
 import { loadConfig } from "../src/shared/config";
@@ -96,12 +96,14 @@ test("no catalogued server means no MCP registration", () => {
   finally { process.env.MDUCT_CONFIG = cfgPath; }
 });
 
-test("an explicit config path never resolves to the real one", () => {
+test("the default path is the harness's own, and the sandbox is not the real home", () => {
   expect(codexConfigPath()).toBe(join(dir, "config.toml"));
   const clean = { ...process.env };
   delete clean.MDUCT_CODEX_CONFIG;
   const p = Bun.spawnSync([process.execPath, "-e", "import('./src/cli/codex').then(m => console.log(m.codexConfigPath()))"], { env: clean });
-  expect(p.stdout.toString().trim()).toBe(join(homedir(), ".codex", "config.toml"));
+  const fallback = p.stdout.toString().trim();
+  expect(fallback).toBe(join(process.env.HOME!, ".codex", "config.toml"));
+  expect(fallback.startsWith(process.env.MDUCT_TEST_REAL_HOME!)).toBe(false); // the point of the sandbox
 });
 
 test("applyBlock on a file that has no block is a plain append", () => {
@@ -136,7 +138,7 @@ test("the drift warning also reads the Codex block when Claude has no hook", () 
   };
   // installed and current → quiet
   const good = run("").toml;
-  expect(sessionStart(good)).not.toContain("PreToolUse-Matcher");
+  expect(sessionStart(good)).not.toContain("does not cover them");
   // installed but the matcher no longer covers the rules → warn
-  expect(sessionStart(good.replace(/matcher = "[^"]*"/, 'matcher = "mcp__.*"'))).toContain("PreToolUse-Matcher");
+  expect(sessionStart(good.replace(/matcher = "[^"]*"/, 'matcher = "mcp__.*"'))).toContain("does not cover them");
 });

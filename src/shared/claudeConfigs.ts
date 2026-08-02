@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServerCfg } from "./config";
+import { home as userHome } from "./paths";
 
 export type ClaudeSource = { source: string; servers: Record<string, ServerCfg> };
 
@@ -36,7 +36,7 @@ function readSource(path: string): ClaudeSource | null {
  * $CLAUDE_CONFIG_DIR, and the project-level .mcp.json.
  */
 export function discoverClaudeSources(opts: { home?: string; cwd?: string; extra?: string[] } = {}): ClaudeSource[] {
-  const home = opts.home ?? homedir();
+  const home = opts.home ?? userHome();
   const cwd = opts.cwd ?? process.cwd();
   const candidates = new Set<string>([join(home, ".claude.json"), join(cwd, ".mcp.json")]);
   if (process.env.CLAUDE_CONFIG_DIR) candidates.add(join(process.env.CLAUDE_CONFIG_DIR, ".claude.json"));

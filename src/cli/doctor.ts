@@ -23,20 +23,20 @@ export async function cmdDoctor(): Promise<number> {
     const both = Object.keys(s.servers).filter((n) => muxNames.has(n));
     if (!both.length) continue;
     overlaps += both.length;
-    console.log(`⚠ ${s.source} verbindet MCP-Server direkt, die mduct schon bedient:`);
+    console.log(`⚠ ${s.source} attaches MCP servers directly that mduct already serves:`);
     for (const n of both) {
       let estimate = "";
       try {
         const tools = (await ask("tools", { server: n })) as unknown[];
-        estimate = ` (~${tools.length} Tools ≈ ${Math.round((tools.length * 350) / 1000)}k Tokens/Session)`;
+        estimate = ` (~${tools.length} tools ≈ ${Math.round((tools.length * 350) / 1000)}k tokens per session)`;
       } catch { /* estimate is best-effort; no daemon → no count */ }
-      console.log(`  ${n}${estimate} → entfernen: claude mcp remove ${n}   # in dieser Config`);
+      console.log(`  ${n}${estimate} → remove it: claude mcp remove ${n}   # from that config`);
     }
   }
-  if (overlaps === 0) console.log("✓ keine Überlappung: kein direkt verbundener MCP-Server, den mduct schon bedient");
+  if (overlaps === 0) console.log("✓ no overlap: nothing is attached directly that mduct already serves");
 
   if (!daemonUp) {
-    console.log("ⓘ Daemon läuft nicht — Server-Erreichbarkeit übersprungen (starte einen Call oder `mduct daemon`).");
+    console.log("ⓘ daemon is not running — skipped the reachability check (make a call, or run `mduct daemon`).");
     return 0;
   }
   let dead = 0;
@@ -48,6 +48,6 @@ export async function cmdDoctor(): Promise<number> {
       console.log(`✗ ${name}: unreachable — ${(e as Error).message.split("\n")[0]}`);
     }
   }
-  if (dead === 0) console.log(`✓ alle ${muxNames.size} mduct-Server erreichbar`);
+  if (dead === 0) console.log(`✓ all ${muxNames.size} mduct servers reachable`);
   return 0;
 }

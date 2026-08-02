@@ -1,7 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { cacheDir } from "../shared/paths";
+import { cacheDir, home } from "../shared/paths";
 import type { Config, ShadowRule } from "../shared/config";
 
 /**
@@ -23,7 +22,7 @@ import type { Config, ShadowRule } from "../shared/config";
 
 export type Hit = { server: string; rule: number; hint: string; budget: number; refillMin: number; block: boolean };
 
-const expandHome = (p: string) => (p.startsWith("~") ? join(homedir(), p.slice(1)) : p);
+const expandHome = (p: string) => (p.startsWith("~") ? join(home(), p.slice(1)) : p);
 
 /**
  * What each harness calls "run a shell command". A `bash` rule matches against the command line, so

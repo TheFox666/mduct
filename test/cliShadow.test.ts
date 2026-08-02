@@ -137,11 +137,11 @@ test("SessionStart warns when the installed matcher does not cover declared rule
     return out;
   };
   // narrow matcher → the rules would never fire, so say so
-  expect(await start(withEnv("mcp__.*"))).toContain("Shadow-Regeln deklariert");
+  expect(await start(withEnv("mcp__.*"))).toContain("shadow rules are declared");
   // wide enough → silent
-  expect(await start(withEnv("mcp__.*|Bash|Grep"))).not.toContain("Shadow-Regeln deklariert");
+  expect(await start(withEnv("mcp__.*|Bash|Grep"))).not.toContain("shadow rules are declared");
   // hook not installed at all is a different problem — no warning
-  expect(await start(withEnv(null))).not.toContain("Shadow-Regeln deklariert");
+  expect(await start(withEnv(null))).not.toContain("shadow rules are declared");
 });
 
 test("effectiveCwd: a leading cd moves the call out of the session cwd (the live false positive)", () => {

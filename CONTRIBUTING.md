@@ -1,6 +1,6 @@
 # Contributing
 
-One maintainer, two runtime dependencies, 219 tests. That shapes what is easy to
+One maintainer, two runtime dependencies, 234 tests. That shapes what is easy to
 accept and what is not, so here is the honest version rather than the polite one.
 
 ## Before a big change, open an issue
@@ -42,10 +42,25 @@ This catches the two things a green suite hides: a test that asserts the wrong
 thing, and a test that would pass without the code. Both have happened in this
 repo, which is why the rule exists.
 
-Tests must not touch anything outside their own temp directory. `MDUCT_CONFIG`
-alone is not isolation — set `MDUCT_SOCKET` too, or a running daemon answers and
-the test proves nothing. Three separate bugs came from tests reaching into a real
-`~/.config` or `~/.claude.json`.
+Tests must not touch anything outside their own temp directory. Three separate
+bugs came from tests reaching into a real `~/.config`, `~/.claude.json` or
+`~/.cache/mduct` — each found by accident, after the fact.
+
+The suite no longer relies on everyone remembering. `test/setup.ts` is preloaded
+before every file: it points `HOME` and the XDG variables at a throwaway
+directory and deletes every inherited `MDUCT_*`, so defaults resolve into a
+sandbox rather than your home. It also fingerprints the files that got hurt
+before and fails the run if one of them changes, which is the only thing that
+catches an absolute path written by hand.
+
+Two consequences worth knowing:
+
+- `test/isolation.test.ts` asserts all of it. If you change how paths resolve,
+  that file is what should tell you.
+- `MDUCT_CONFIG` alone was never isolation: without `MDUCT_SOCKET` a running
+  daemon answers and the test proves nothing. A sandboxed `XDG_RUNTIME_DIR` now
+  makes a stray daemon unreachable, but pointing both at your own temp dir is
+  still the honest way to write it.
 
 ## The loop
 
