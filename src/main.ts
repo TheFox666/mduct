@@ -285,9 +285,17 @@ async function main(): Promise<number> {
       const sub = argv.shift();
       const { hookInstall, hookRunPreToolUse, hookRunSessionStart } = await import("./cli/hook");
       if (sub === "install" && argv[0] === "claude") { argv.shift(); return hookInstall(argv); }
+      if (sub === "install" && argv[0] === "codex") {
+        const { installCodex } = await import("./cli/codex");
+        return installCodex(argv.includes("--remove"));
+      }
       if (sub === "run" && argv[0] === "session-start") return hookRunSessionStart();
       if (sub === "run" && argv[0] === "pre-tool-use") return await hookRunPreToolUse();
-      console.error("usage: mduct hook install claude [--settings <file>] [--remove] | mduct hook run session-start|pre-tool-use");
+      console.error(
+        "usage: mduct hook install claude [--settings <file>] [--remove]\n" +
+        "       mduct hook install codex [--remove]\n" +
+        "       mduct hook run session-start|pre-tool-use",
+      );
       return 1;
     }
     case "doctor": {

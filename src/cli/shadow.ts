@@ -25,11 +25,19 @@ export type Hit = { server: string; rule: number; hint: string; budget: number; 
 
 const expandHome = (p: string) => (p.startsWith("~") ? join(homedir(), p.slice(1)) : p);
 
+/**
+ * What each harness calls "run a shell command". A `bash` rule matches against the command line, so
+ * it has to know which tool carries one — and the name differs: Claude Code says `Bash`, Codex says
+ * `shell_command` or `exec_command`. A rule written once should fire in both, which is the whole
+ * point of the field being called `bash` rather than being a tool name.
+ */
+export const SHELL_TOOLS = new Set(["Bash", "shell_command", "exec_command"]);
+
 /** Does one rule cover this call? `pathIn` is an extra gate, not a matcher on its own. */
 export function ruleMatches(rule: ShadowRule, toolName: string, command: string, cwd: string): boolean {
   const byTool = rule.tool?.includes(toolName) ?? false;
   let byBash = false;
-  if (rule.bash && toolName === "Bash") {
+  if (rule.bash && SHELL_TOOLS.has(toolName)) {
     try { byBash = new RegExp(rule.bash).test(command); } catch { byBash = false; } // a bad regex must not break the hook
   }
   if (!byTool && !byBash) return false;

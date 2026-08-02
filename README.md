@@ -127,12 +127,16 @@ mduct call gitlab create_issue project=42 title="it broke again"
 mduct status                  # which instance answered, and from where
 ```
 
-**Wire an agent to it.** Claude Code has hooks for this. Anything else: paste
-`mduct index` into the system prompt.
+**Wire an agent to it.** Claude Code and Codex both have hooks for this.
+Anything else: paste `mduct index` into the system prompt.
 
 ```sh
-mduct hook install claude
+mduct hook install claude     # ~/.claude/settings.json
+mduct hook install codex      # ~/.codex/config.toml, in a marked block
 ```
+
+Both take `--remove`. The Codex installer only ever rewrites the text between
+its two comment markers, so the rest of your config stays yours.
 
 ## How it works
 
@@ -287,6 +291,7 @@ payload straight into the context.
 
 ```sh
 mduct hook install claude              # registers the catalogue too
+mduct hook install codex               # same, as [mcp_servers.mduct]
 ```
 
 The catalogue reloads itself: it watches the config and its tool cache, and sends
@@ -298,7 +303,8 @@ a rewrite that changed nothing.
 Hooks live in `settings.json` and MCP servers in `.claude.json`, so the install
 touches both — leaving the second to you is an install that half-works and a
 catalogue nobody sees. `--remove` takes it back out, and session start says so
-if a server declares `mcpCatalog` while the server is not registered.
+if a server declares `mcpCatalog` while the server is not registered. Codex keeps
+hooks and servers in the same TOML, which makes that install the easier of the two.
 
 ### Which servers to mirror
 
@@ -371,7 +377,7 @@ mduct doctor                           # servers attached directly AND served he
 | [Cookbook](../../wiki/Cookbook) | jq pipelines, batching, CI, read-only agents, a second instance |
 | [Configuration](../../wiki/Configuration) | every field, with defaults and failure modes |
 | [Arguments & output](../../wiki/Arguments-and-output) | argument forms, the output contract, exit codes |
-| [Agent integration](../../wiki/Agent-integration) | Claude hooks, the prompt block, other harnesses |
+| [Agent integration](../../wiki/Agent-integration) | Claude and Codex hooks, the prompt block, other harnesses |
 | [Shadowing](../../wiki/Shadowing) | nudge rules, buckets, measurement |
 | [Troubleshooting](../../wiki/Troubleshooting) | when the daemon sulks |
 

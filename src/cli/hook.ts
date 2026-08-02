@@ -3,12 +3,13 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { discoverClaudeSources } from "../shared/claudeConfigs";
 import { loadConfig } from "../shared/config";
+import { codexConfigPath } from "./codex";
 import { renderIndex } from "./format";
 import { available, findHit, muxCallServer, readEvents, record, shadowMatcher } from "./shadow";
 
 /**
  * Hook handlers ARE mduct subcommands — no script files to install or drift.
- * `mduct hook install claude` only patches the target settings.json.
+ * `mduct hook install claude|codex` only patches the target settings file.
  */
 
 function selfBin(): string {
@@ -98,10 +99,10 @@ export function hookRunSessionStart(): number {
   // config can't reach settings.json, so the drift is checked HERE instead of being a silent no-op.
   // same drift check for the catalogue: declared in servers.jsonc, registered in .claude.json
   if (catalogueWanted() && !mcpRegistered())
-    console.log("⚠ mduct: a server declares mcpCatalog, but the mduct MCP server is not registered — run `mduct hook install claude` once.");
+    console.log("⚠ mduct: a server declares mcpCatalog, but the mduct MCP server is not registered — run `mduct hook install <claude|codex>` once.");
   const needed = shadowMatcher(cfg);
   if (needed && !installedMatcherCovers(needed))
-    console.log(`⚠ mduct: Shadow-Regeln deklariert, aber der PreToolUse-Matcher deckt sie nicht (${needed}) — \`mduct hook install claude\` einmal neu laufen lassen.`);
+    console.log(`⚠ mduct: Shadow-Regeln deklariert, aber der PreToolUse-Matcher deckt sie nicht (${needed}) — \`mduct hook install <claude|codex>\` einmal neu laufen lassen.`);
   // migration nudge: direct-attached servers that mduct already serves
   const muxNames = new Set(Object.keys(cfg.servers).filter((n) => !cfg.servers[n]!.disabled));
   const home = process.env.MDUCT_HOME;
@@ -118,10 +119,20 @@ export function hookRunSessionStart(): number {
 
 type PreToolUseInput = {
   tool_name?: string;
-  tool_input?: { command?: string };
+  tool_input?: { command?: string | string[]; cmd?: string | string[] };
   cwd?: string;
   session_id?: string;
 };
+
+/**
+ * Claude passes a shell command as a string; Codex's shell tools pass argv (`["bash","-lc","grep …"]`)
+ * and `exec_command` calls the field `cmd`. Joining argv is enough for rule matching — a `bash` regex
+ * looks for the program name, and it is in there either way.
+ */
+function commandOf(input: PreToolUseInput["tool_input"]): string {
+  const v = input?.command ?? input?.cmd;
+  return Array.isArray(v) ? v.join(" ") : typeof v === "string" ? v : "";
+}
 
 export async function hookRunPreToolUse(): Promise<number> {
   const input = await new Response(Bun.stdin.stream()).text();
@@ -149,14 +160,26 @@ export async function hookRunPreToolUse(): Promise<number> {
   return 0;
 }
 
-/** Does the installed hook entry already listen for these tools? Unreadable settings → assume yes (stay quiet). */
+/**
+ * Does the installed hook entry already listen for these tools? Unreadable settings → assume yes
+ * (stay quiet). Checked for whichever harness is actually installed: no Claude hook and no Codex
+ * block means the drift warning has nothing to say.
+ */
 function installedMatcherCovers(needed: string): boolean {
+  const wants = needed.split("|");
   const p = process.env.MDUCT_CLAUDE_SETTINGS ?? join(homedir(), ".claude", "settings.json");
-  let entries: HookEntry[];
-  try { entries = (JSON.parse(readFileSync(p, "utf8")) as Settings).hooks?.PreToolUse ?? []; } catch { return true; }
+  let entries: HookEntry[] = [];
+  try { entries = (JSON.parse(readFileSync(p, "utf8")) as Settings).hooks?.PreToolUse ?? []; } catch { /* fall through to Codex */ }
   const ours = entries.filter((e) => (e.hooks ?? []).some((h) => h.command.endsWith("hook run pre-tool-use")));
-  if (!ours.length) return true; // hook not installed at all — that's a different problem, not this warning's
-  return needed.split("|").every((tool) => ours.some((e) => (e.matcher ?? "").split("|").includes(tool)));
+  if (ours.length) return wants.every((tool) => ours.some((e) => (e.matcher ?? "").split("|").includes(tool)));
+
+  // Codex: one managed block, one matcher line, read as text — a TOML parser for this would be silly.
+  try {
+    const toml = readFileSync(codexConfigPath(), "utf8");
+    if (!toml.includes("hook run pre-tool-use")) return true;
+    const m = toml.match(/matcher = "([^"]*)"/);
+    return !!m && wants.every((tool) => m[1]!.split("|").includes(tool));
+  } catch { return true; } // installed nowhere — that's a different problem, not this warning's
 }
 
 /**
@@ -166,7 +189,7 @@ function installedMatcherCovers(needed: string): boolean {
  * is a question only the log can answer.
  */
 function shadowBranch(ev: PreToolUseInput, toolName: string): number {
-  const command = ev.tool_input?.command ?? "";
+  const command = commandOf(ev.tool_input);
   const session = ev.session_id ?? "unknown";
   let cfg;
   try { cfg = loadConfig(); } catch { return 0; }
