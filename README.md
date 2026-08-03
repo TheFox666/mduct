@@ -65,9 +65,20 @@ an agent can see the call rather than remember to ask; a 189-tool one collapses
 to a count and a pointer. The signatures come from a cache the daemon fills as it
 is used, so the index never connects and works cold in a session hook.
 
-Lazy-loading the schemas would fix the token bill and leave the interesting part
-undone — and it introduces its own problem: out of context, out of mind. An
-agent will not use a capability it cannot see.
+The descriptions are not gone, they are one call away: `mduct tools gitlab`
+lists names and signatures, `mduct schema gitlab create_issue` pulls one
+definition in full when the fields matter. What the prompt stops carrying is the
+185 a model was never going to read.
+
+Lazy-loading the schemas stops there, and stopping there leaves the harder half
+undone: out of context, out of mind. An agent will not use a capability it
+cannot see, and a line in a prompt loses to habit at the moment a tool gets
+picked — one two-day session, 21 calls to a code-index server against 270 greps
+into the repos that server had indexed. The agent knew. It reached for grep
+anyway. Two answers below, priced differently: the [tool
+namespace](#putting-mcp-tool-names-in-the-agents-tool-namespace) puts the names
+where selection happens, [shadowing](#shadowing) speaks at the moment of the
+wrong call.
 
 ## Install
 
@@ -337,10 +348,8 @@ with its result — and a token bucket decides how often it speaks:
 }]
 ```
 
-This exists because a prompt block is read once and then loses to habit.
-Measured on one two-day session: 21 calls to a code-index server against 270
-greps into the repos that server had indexed, with the index block sitting in
-context the entire time. The agent knew. It reached for grep anyway.
+This exists because a prompt block is read once and then loses to habit — the
+21-against-270 session above.
 
 The note arrives as `additionalContext`, never as an approval: a nudge must not
 widen permissions, so a call that would have asked still asks. A rule that really
