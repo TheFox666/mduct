@@ -42,7 +42,8 @@ model. Humans get to use these servers too.
 
 Because a shell sits in the middle, you filter *before* anything becomes
 context. A tool that returns 20 issues returns 20 full issues; you wanted three
-fields. Measured on a real call: 24,568 characters down to 1,768.
+fields. On a real call that is 1,768 characters in context where the server sent
+24,568 — the three fields you named, not the twenty objects it had.
 
 That is the part worth having. The schemas are the smaller half of the same
 story: a client loads every connected server's tool definitions up front — one
@@ -71,6 +72,9 @@ connects and works cold in a session hook. Measured on this setup — 7 servers,
 | every schema, the way a client loads them | 295 kB | ~75k tokens |
 | every tool mirrored into the tool namespace | 78 kB | ~20k tokens |
 | the index | 2.4 kB | ~600 tokens |
+
+Token counts are bytes ÷ 4. The ratios hold; the absolute numbers are estimates,
+and none of this is a claim about your bill — it is what sits in the prompt.
 
 273 of those 295 kB are JSON Schema; names and descriptions are 22. The prose
 that tells a model *when* to reach for a tool is 7% of the weight — and it is not
