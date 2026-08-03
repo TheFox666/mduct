@@ -46,7 +46,7 @@ fields. Measured on a real call: 24,568 characters down to 1,768.
 
 That is the part worth having. The schemas are the smaller half of the same
 story: a client loads every connected server's tool definitions up front — one
-GitLab server is 186 tools and ~168 kB of JSON Schema, call it 40k tokens before
+GitLab server is 189 tools and 191 kB of JSON Schema, call it 48k tokens before
 the model reads your question. mduct leaves them on disk and puts one line per
 server in the prompt instead:
 
@@ -60,15 +60,23 @@ CLI tools via `mduct` CLI (what it can do: mduct tools <tool>; run: mduct run <t
   kubectl      — read-only cluster access
 ```
 
-2.9 kB for a seven-server setup. A server small enough carries its signatures so
-an agent can see the call rather than remember to ask; a 189-tool one collapses
-to a count and a pointer. The signatures come from a cache the daemon fills as it
-is used, so the index never connects and works cold in a session hook.
+A server small enough carries its signatures so an agent can see the call rather
+than remember to ask; a 189-tool one collapses to a count and a pointer. The
+signatures come from a cache the daemon fills as it is used, so the index never
+connects and works cold in a session hook. Measured on this setup — 7 servers,
+290 tools:
 
-The descriptions are not gone, they are one call away: `mduct tools gitlab`
-lists names and signatures, `mduct schema gitlab create_issue` pulls one
-definition in full when the fields matter. What the prompt stops carrying is the
-185 a model was never going to read.
+| what the prompt carries | | |
+|---|---:|---:|
+| every schema, the way a client loads them | 295 kB | ~75k tokens |
+| every tool mirrored into the tool namespace | 78 kB | ~20k tokens |
+| the index | 2.4 kB | ~600 tokens |
+
+273 of those 295 kB are JSON Schema; names and descriptions are 22. The prose
+that tells a model *when* to reach for a tool is 7% of the weight — and it is not
+gone either, just one call away: `mduct tools gitlab` lists names and signatures,
+`mduct schema gitlab create_issue` pulls one definition in full when the fields
+matter.
 
 Lazy-loading the schemas stops there, and stopping there leaves the harder half
 undone: out of context, out of mind. An agent will not use a capability it
@@ -325,11 +333,13 @@ the namespace are the servers **no request ever names** — a code index, a
 knowledge base, anything an agent is supposed to reach for on its own initiative
 while doing something else. That is exactly where a prose line loses to habit.
 
-Cost keeps the list short: a catalogue entry runs about six times the prose line
-for the same tool. Measured on one setup — 15 tools are 2.5 kB as a catalogue
-against 0.75 kB as signatures in the index; a 189-tool server would be 29 kB. A
+Cost keeps the list short: a catalogue entry runs about nine times the prose line
+for the same tool. Measured on one setup — 15 tools are 4.1 kB as a catalogue
+against 0.46 kB as signatures in the index; a 189-tool server would be 51 kB. A
 catalogued server drops its signatures from the prompt block, so you never pay
-for both.
+for both. The descriptions it carries are the truncated ones from the index
+cache, not the server's full prose — a tool whose description does its routing
+loses that here.
 
 ## Shadowing
 
