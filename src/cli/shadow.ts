@@ -167,9 +167,16 @@ export function available(
   return tokens;
 }
 
-/** A `mduct call <server>` in a Bash command — the conversion signal for a nudge. */
-export function muxCallServer(command: string): string | null {
-  return /\bmux\s+(?:call|run)\s+([\w.-]+)/.exec(command)?.[1] ?? null;
+/**
+ * A `mduct call <server>` in a Bash command — the conversion signal for a nudge.
+ *
+ * This matched `mux` for two weeks after the binary was renamed, so every rule
+ * reported 0 converted against real calls and the feature read as dead. The name
+ * of the binary is the one thing in here that changed out from under the code,
+ * which is why it now has a test that fails when it changes again.
+ */
+export function mductCallServer(command: string): string | null {
+  return /\bmduct\s+(?:call|run)\s+([\w.-]+)/.exec(command)?.[1] ?? null;
 }
 
 /**
