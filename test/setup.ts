@@ -1,5 +1,5 @@
 import { afterAll } from "bun:test";
-import { mkdirSync, mkdtempSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -57,9 +57,47 @@ const fingerprint = () =>
   });
 let before = fingerprint();
 
-// A preload's afterAll runs after EVERY test file, so the blame lands on the file that caused it.
-// (process.on("exit") never fires under the bun test runner.)
+/**
+ * Third layer: a test that leaves a DAEMON behind.
+ *
+ * Every command that reaches a server autostarts one, and the child is `unref`'d and reparented, so
+ * it outlives the CLI, the test file and the runner — silently, because a leaked process leaves no
+ * trace in the working tree. Two files did it for as long as they had existed: 30 daemons were found
+ * running at ~78 MB each, the oldest two days old.
+ *
+ * A test daemon is one whose MDUCT_SOCKET points into the tmpdir — the one thing every test daemon
+ * has and no real one does. Linux-only (it reads /proc); elsewhere it finds nothing rather than
+ * crying wolf.
+ */
+function testDaemons(): { pid: number; socket: string }[] {
+  const out: { pid: number; socket: string }[] = [];
+  let pids: string[];
+  try { pids = readdirSync("/proc").filter((n) => /^\d+$/.test(n)); } catch { return out; }
+  for (const pid of pids) {
+    try {
+      if (!readFileSync(`/proc/${pid}/cmdline`, "utf8").includes("daemon")) continue;
+      const sock = readFileSync(`/proc/${pid}/environ`, "utf8").split("\0")
+        .find((kv) => kv.startsWith("MDUCT_SOCKET="))?.slice("MDUCT_SOCKET=".length);
+      if (sock?.startsWith(tmpdir())) out.push({ pid: Number(pid), socket: sock });
+    } catch { /* the process ended, or is not ours to read */ }
+  }
+  return out;
+}
+/** PIDs, not a count: a daemon left by an EARLIER run must not be charged to this one. */
+const daemonsBefore = new Set(testDaemons().map((d) => d.pid));
+
+/**
+ * NB this runs ONCE for the whole suite, not after each file — measured, because the comment here
+ * used to claim the opposite and the blame it printed was simply the last file to finish. Bun
+ * evaluates the preload once and its `afterAll` closes the run. So no per-file attribution: the
+ * socket path is what identifies the culprit, since each file mkdtemps its own prefix.
+ * (`process.on("exit")` never fires under the bun test runner, which is why this is an afterAll.)
+ */
 afterAll(() => {
+  // Kill first, then report — a failed run must not leave the machine dirtier than it found it.
+  const leaked = testDaemons().filter((d) => !daemonsBefore.has(d.pid));
+  for (const { pid } of leaked) { try { process.kill(pid); } catch { /* already gone */ } }
+
   const after = fingerprint();
   const touched = watched.filter((_, i) => before[i] !== after[i]);
   before = after; // report once, then keep going — the next file gets a clean baseline
@@ -70,6 +108,15 @@ afterAll(() => {
     throw new Error(
       `a test in this file wrote to the developer's real config: ${hard.join(", ")}\n` +
       "Find the absolute path and point it at a tmpdir — the sandbox home only covers defaults.",
+    );
+  }
+  if (leaked.length) {
+    throw new Error(
+      `the suite left ${leaked.length} daemon(s) running — killed, but fix the test:\n` +
+      leaked.map((d) => `  ${d.socket}`).join("\n") + "\n" +
+      "Each socket sits in the tmpdir of the file that made it (grep test/ for its prefix). Any\n" +
+      "command that reaches a server autostarts a daemon, so such a file has to end with:\n" +
+      '  afterAll(async () => { await mduct("daemon", "--stop"); });   // same env as the tests',
     );
   }
 });

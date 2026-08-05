@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { available, conversion, effectiveCwd, findHit, ruleMatches, shadowMatcher, type Event } from "../src/cli/shadow";
+import { available, conversion, effectiveCwd, findHit, mductCallServer, ruleMatches, shadowMatcher, type Event } from "../src/cli/shadow";
 import type { Config } from "../src/shared/config";
 
 const RULE = {
@@ -25,6 +25,22 @@ test("ruleMatches: the tool list and the bash regex both fire, pathIn gates both
 
 test("ruleMatches: a broken regex is inert instead of throwing in the hook", () => {
   expect(ruleMatches({ bash: "([", hint: "x" }, "Bash", "grep foo", "")).toBe(false);
+});
+
+// The conversion signal is the whole point of the nudge log: without it every rule
+// reads as 0 converted and looks like a feature that does not work. This matched
+// `mux` for two weeks after the binary was renamed, so `mduct shadow` reported
+// zero conversions against 172 real calls. A binary name in a regex is a fact
+// about the world, and it needs a test that fails when the world moves.
+test("mductCallServer recognises the name the binary actually has", () => {
+  expect(mductCallServer("mduct call hive search_code query=x")).toBe("hive");
+  expect(mductCallServer("cd /repo && mduct call gitlab list_issues state=opened")).toBe("gitlab");
+  expect(mductCallServer("mduct run kubectl get pods")).toBe("kubectl");
+  expect(mductCallServer("grep -rn foo .")).toBeNull();
+  // Known and accepted: a command that only MENTIONS the call counts as one. The
+  // signal is a hint about a habit, not an audit, and a shell-aware parser here
+  // would cost more than an occasional over-count in a log nobody bills against.
+  expect(mductCallServer("echo 'run mduct call hive' > notes.md")).toBe("hive");
 });
 
 test("findHit skips disabled servers and servers without rules", () => {

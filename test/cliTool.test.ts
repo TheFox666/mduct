@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,6 +75,10 @@ describe("mduct tools <cliTool> — discovery for the non-MCP half", () => {
     expect(out).toContain("SUBCOMMANDS:");            // the tool's own output, through its wrapper
     expect(err).not.toContain("unknown server");
   }, 30_000);
+
+  // `tools <name>` falls through to the daemon when no CLI tool matches, which autostarts one on
+  // this block's own socket. Nothing else stops it, and it outlives the whole run.
+  afterAll(async () => { await run("daemon", "--stop"); });
 
   test("a name that is neither names both kinds, not just servers", async () => {
     const { err } = await run("tools", "nope");

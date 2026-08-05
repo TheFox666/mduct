@@ -4,7 +4,7 @@ import { discoverClaudeSources } from "../shared/claudeConfigs";
 import { loadConfig } from "../shared/config";
 import { codexConfigPath } from "./codex";
 import { renderIndex } from "./format";
-import { available, findHit, muxCallServer, readEvents, record, shadowMatcher } from "./shadow";
+import { available, findHit, mductCallServer, readEvents, record, shadowMatcher } from "./shadow";
 import { home } from "../shared/paths";
 
 /**
@@ -196,7 +196,7 @@ function shadowBranch(ev: PreToolUseInput, toolName: string): number {
   try { cfg = loadConfig(); } catch { return 0; }
 
   // conversion signal: the agent reached for a mduct server on its own (or after a nudge)
-  const used = muxCallServer(command);
+  const used = mductCallServer(command);
   if (used && cfg.servers[used]) {
     record({ ts: new Date().toISOString(), session, kind: "use", server: used });
     return 0;

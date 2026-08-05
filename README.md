@@ -180,6 +180,7 @@ You never start the daemon by hand:
 
 ```sh
 mduct status              # up? which socket/config/secrets
+mduct status --json       # the same, plus per-server connection + auth state, for programs
 mduct logs [server]       # recent activity
 mduct daemon --stop       # next call restarts it
 mduct daemon              # foreground, for when startup fails and you want to know why
@@ -192,6 +193,7 @@ mduct daemon --install    # systemd user unit, if you want it at login
 |---|---|
 | Warm daemon | Connections and OAuth sessions survive between calls. A stdio server isn't respawned and a remote isn't re-handshaked every time you invoke it. |
 | Pipe-ready output | `--json` strips the prose some servers wrap around their payload. `--compact` minifies. Exit codes mean what you think they mean. |
+| State for other programs | `mduct status --json`: every server's connection and OAuth state as data, so an app can show a dead login instead of you finding out mid-task. Polling is safe — it starts no daemon. [Fields](https://github.com/TheFox666/mduct/wiki/Commands#machine-readable-state). |
 | Guards in the daemon | Per-server `allow`/`deny` patterns, living somewhere the model cannot argue with them. |
 | Secrets out of the config | `${VAR}` refs resolve from a 0600 store. Plaintext tokens never touch `servers.jsonc`. |
 | MCP and plain CLIs | `kubectl`, `playwright` and friends show up in the same list and are called the same way. Nobody has to care which is which. |
