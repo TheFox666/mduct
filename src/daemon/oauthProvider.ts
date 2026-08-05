@@ -34,16 +34,25 @@ export function readAuthState(server: string): { hasTokens: boolean; expiresAt: 
   const data = readPersisted(server);
   const t = data.tokens;
   if (!t?.access_token) return { hasTokens: false, expiresAt: null, canRefresh: false };
-  // ponytail: tokens written before savedAt existed fall back to the file's mtime — the same
-  // instant, minus the precision of whatever wrote the file since.
-  const savedAt = data.savedAt ?? ((): number | null => {
-    try { return statSync(authFilePath(server)).mtimeMs; } catch { return null; }
-  })();
+  // ponytail: tokens written before savedAt existed fall back to the file's mtime. write() stamps
+  // that mtime into the file before it can be lost, so this only runs for a file nothing has
+  // touched since the upgrade.
+  const savedAt = data.savedAt ?? mtimeOf(authFilePath(server));
+  // The file is provider-supplied JSON read through a cast, so neither field is guaranteed to be a
+  // number. Arithmetic on a string is not an error in JS: "yesterday" + 3600000 produced the
+  // timestamp "yesterday3600000", and new Date(NaN).toISOString() THREW, taking the whole readout
+  // down over one bad file. An unusable stamp means the expiry is unknown, which is what null says.
+  const lifetime = Number(t.expires_in);
+  const stamp = savedAt == null ? NaN : Number(savedAt); // Number(null) is 0 — do not let it pass as a date
   return {
     hasTokens: true,
-    expiresAt: t.expires_in != null && savedAt != null ? savedAt + t.expires_in * 1000 : null,
+    expiresAt: Number.isFinite(lifetime) && Number.isFinite(stamp) ? stamp + lifetime * 1000 : null,
     canRefresh: !!t.refresh_token,
   };
+}
+
+function mtimeOf(path: string): number | null {
+  try { return statSync(path).mtimeMs; } catch { return null; }
 }
 
 /**
@@ -61,6 +70,14 @@ export class FileOAuthProvider implements OAuthClientProvider {
 
   private write(next: Persisted): void {
     const p = this.filePath();
+    // A pre-savedAt file dates its tokens by its own mtime, and this write is about to move it.
+    // `mduct auth` stores a PKCE verifier BEFORE the browser step, so an abandoned re-auth used to
+    // reset the derived expiry to now — a dead session then read as `valid`, which is exactly the
+    // lie the status output exists to prevent. Carry the old instant over first.
+    if (next.tokens && next.savedAt == null) {
+      const was = mtimeOf(p);
+      if (was != null) next = { ...next, savedAt: was };
+    }
     mkdirSync(dirname(p), { recursive: true, mode: 0o700 });
     const tmp = `${p}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });

@@ -118,6 +118,71 @@ test("status --json does not autostart a daemon", async () => {
   expect(await socketAlive(env.MDUCT_SOCKET!)).toBe(false);
 });
 
+/**
+ * The success path: a daemon that is up, with a server actually connected. The rest of this file
+ * runs against a dead socket, and "which MCP servers are connected" is the whole point of the
+ * command — a suite that only ever sees `false` proves the field exists, not that it works.
+ */
+test("a live daemon reports up, and the server it connected to as connected", async () => {
+  const call = await mduct("call", "local", "echo", "text=warm"); // autostarts the daemon, connects "local"
+  expect(call.code).toBe(0);
+
+  const st = JSON.parse((await mduct("status", "--json")).out) as { daemon: { up: boolean }; servers: ServerState[] };
+  expect(st.daemon.up).toBe(true);
+  const local = byName(st.servers).local!;
+  expect(local.connected).toBe(true);
+  expect(local.state).toBe("connected");
+  // an untouched server on the same live daemon stays idle — connected is per server, not per daemon
+  expect(byName(st.servers).fresh!.state).toBe("idle");
+
+  await mduct("daemon", "--stop");
+});
+
+test("a daemon that answers with an error is up, not down", async () => {
+  // A daemon older than the CLI does not know the `servers` method. It answers — with an error —
+  // and treating every failure as "down" made --json contradict the text status about one instance.
+  const sockDir = mkdtempSync(join(tmpdir(), "mduct-oldd-"));
+  const { serveIpc } = await import("../src/shared/ipc");
+  const srv = await serveIpc(join(sockDir, "d.sock"), async (method) => {
+    if (method === "ping") return "pong";
+    throw new Error(`unknown method ${method}`);
+  });
+  try {
+    const p = Bun.spawn([process.execPath, "src/main.ts", "status", "--json"], {
+      env: { ...env, MDUCT_SOCKET: join(sockDir, "d.sock") }, stdout: "pipe", stderr: "pipe",
+    });
+    const out = await new Response(p.stdout).text();
+    await p.exited;
+    expect((JSON.parse(out) as { daemon: { up: boolean } }).daemon.up).toBe(true);
+  } finally {
+    srv.stop();
+  }
+});
+
+test("status --json reports a config that does not load, instead of dying on it", async () => {
+  // The text `status` never parses the config on purpose — it is what you run when things are
+  // broken. The JSON one must not be less useful: a poller needs "this instance is misconfigured"
+  // as data, not as an exit code indistinguishable from "mduct is not installed".
+  const badDir = mkdtempSync(join(tmpdir(), "mduct-badcfg-"));
+  const badCfg = join(badDir, "servers.jsonc");
+  writeFileSync(badCfg, JSON.stringify({ servers: { x: {} } })); // neither command nor url
+  const bad = { ...env, MDUCT_CONFIG: badCfg, MDUCT_SOCKET: join(badDir, "d.sock") };
+
+  const p = Bun.spawn([process.execPath, "src/main.ts", "status", "--json"], { env: bad, stdout: "pipe", stderr: "pipe" });
+  const [out, code] = await Promise.all([new Response(p.stdout).text(), p.exited]);
+  expect(code).toBe(0);
+  const st = JSON.parse(out) as { config: string; error?: string; servers: ServerState[] };
+  expect(st.config).toBe(badCfg);        // the identity still answers — that is what you needed
+  expect(st.servers).toEqual([]);
+  expect(st.error).toContain("command");  // and it names why, the way the loader does
+
+  // `servers --json` is the list, not the diagnosis: an empty array would claim "none configured"
+  const q = Bun.spawn([process.execPath, "src/main.ts", "servers", "--json"], { env: bad, stdout: "pipe", stderr: "pipe" });
+  const [qerr, qcode] = await Promise.all([new Response(q.stderr).text(), q.exited]);
+  expect(qcode).toBe(1);
+  expect(qerr).toContain("command");
+});
+
 test("status --json names the profile instance it answered for", async () => {
   const p = Bun.spawn([process.execPath, "src/main.ts", "status", "--json"], {
     env: { ...env, MDUCT_PROFILE: "office" }, stdout: "pipe", stderr: "pipe",

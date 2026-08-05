@@ -1,6 +1,6 @@
-import { loadConfig, type ServerCfg } from "../shared/config";
+import { loadConfig, type Config, type ServerCfg } from "../shared/config";
 import { configPath, secretsPath, socketPath } from "../shared/paths";
-import { request } from "../shared/ipc";
+import { isTransportError, request } from "../shared/ipc";
 import { readAuthState } from "../daemon/oauthProvider";
 import pkg from "../../package.json" with { type: "json" };
 
@@ -49,6 +49,8 @@ export type InstanceState = {
   daemon: { up: boolean; socket: string };
   config: string;
   secrets: string;
+  /** Why the config could not be read, when it could not. Absent on a healthy instance. */
+  error?: string;
   servers: ServerState[];
 };
 
@@ -70,29 +72,42 @@ function authInfo(name: string, cfg: ServerCfg): AuthInfo {
 
 /**
  * Which servers hold a live session. Deliberately NOT the autostarting `daemonRequest` the other
- * commands use: an app polling for state must never be the thing that spawns a daemon. Down →
- * null, and every server reads as disconnected, which is the truth.
+ * commands use: an app polling for state must never be the thing that spawns a daemon.
+ *
+ * `up` is whether the daemon ANSWERED, which is not the same as whether it answered usefully. A
+ * daemon older than this CLI does not know the `servers` method and replies with an error — that is
+ * a running daemon, and reporting it as down would make `--json` contradict the text `status` about
+ * one instance. Only a transport failure means nothing is there.
  */
-async function connectedNames(): Promise<Set<string> | null> {
+async function liveConnections(): Promise<{ up: boolean; connected: Set<string> }> {
   try {
     const list = (await request(socketPath(), "servers", {}, 1500)) as { name: string; connected: boolean }[];
-    return new Set(list.filter((s) => s.connected).map((s) => s.name));
-  } catch {
-    return null;
+    return { up: true, connected: new Set(list.filter((s) => s.connected).map((s) => s.name)) };
+  } catch (e) {
+    // A timeout is tagged transport (ipc.ts) and lands here as down — the same call the text
+    // `status` makes, with the same 1.5s patience, so the two commands agree.
+    return { up: !isTransportError(e), connected: new Set() };
   }
 }
 
 export async function collectState(): Promise<InstanceState> {
-  const cfg = loadConfig();
-  const live = await connectedNames();
+  // A config that does not parse is the most common way an instance is unhealthy, and it must be
+  // reportable AS DATA — the text `status` deliberately never parses the config, because it is what
+  // you run when things are broken, and the machine-readable one must not be less useful. The
+  // loader's message names the file and the fix, so it is worth passing through verbatim.
+  let cfg: Config = { servers: {}, tools: {} };
+  let error: string | undefined;
+  try { cfg = loadConfig(); } catch (e) { error = String((e as Error).message ?? e); }
+  const live = await liveConnections();
   return {
     version: (pkg as { version: string }).version,
     profile: process.env.MDUCT_PROFILE?.trim() || null,
-    daemon: { up: live !== null, socket: socketPath() },
+    daemon: { up: live.up, socket: socketPath() },
     config: configPath(),
     secrets: secretsPath(),
+    ...(error ? { error } : {}),
     servers: Object.entries(cfg.servers).map(([name, s]) => {
-      const connected = live?.has(name) ?? false;
+      const connected = live.connected.has(name);
       return {
         name,
         transport: s.command ? "stdio" : "http",

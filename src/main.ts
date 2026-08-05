@@ -69,7 +69,8 @@ STATE FOR OTHER PROGRAMS
   auth.state is one of: n/a (nothing to authorize) · unauthorized (never signed in) · valid ·
   refreshable (lapsed, the daemon renews it) · expired (a human must run auth.fix).
   Neither autostarts the daemon, so polling them is safe; daemon down = nothing connected.
-    mduct status --json | jq -r '.servers[] | select(.auth.fix) | .auth.fix'   # what needs a login
+  A config that does not load is reported as \`error\` in the object (exit 0), not as a crash.
+    mduct status --json | jq -r '.servers[] | select(.enabled and .auth.fix) | .auth.fix'  # needs a login
 
 INSTANCES
   A named instance is one env var: MDUCT_PROFILE=<name> → ~/.config/mduct-<name>/ with its own
@@ -237,7 +238,11 @@ async function main(): Promise<number> {
     case "servers": {
       if (boolFlag(argv, "--json")) {
         const { collectState } = await import("./cli/state");
-        console.log(JSON.stringify((await collectState()).servers, null, 2));
+        const state = await collectState();
+        // An array cannot carry "the config is broken", and printing [] would claim the opposite:
+        // no servers configured. This command is the list; `status --json` is the diagnosis.
+        if (state.error) { console.error(state.error); return 1; }
+        console.log(JSON.stringify(state.servers, null, 2));
         return 0;
       }
       const list = (await daemonRequest("servers", {})) as { name: string; connected: boolean; disabled: boolean; note?: string }[];
