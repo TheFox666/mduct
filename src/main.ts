@@ -23,7 +23,7 @@ CALL & RUN
                                               --full bypasses the oversized-list guard
   run <tool> [args …]                  run a CLI tool (kubectl/aws/…) with its stored env/wrapping
   env <tool>                           its env as shell exports — eval "$(mduct env playwright)"
-  tools <server>                       list a server's tools (compact — no schemas)
+  tools <server|tool>                  a server's tools (compact — no schemas); for a CLI tool, its own --help
   schema <server> <tool>               full JSON schema of one tool
   index [--refresh]                    the compact capability block (for prompts / hooks)
   mcp                                  serve the tool CATALOGUE over MCP (names only; calls stay in the shell)
@@ -32,17 +32,22 @@ SERVERS
   servers [--json]                     configured MCP servers + connection state (--json = machine-readable)
   add                                  no args → interactive picker (↑↓, / search, ⏎ toggle)
   add <name> -- <cmd …>                add a stdio MCP server
-  add <name> --url <url>               add an http MCP server
-  add <ref>                            install from the public registry (version-pinned)
-  add <name> --tool -- <cmd …>         add a CLI tool  [--check --setup --env K=V --note]
+  add <name> --url <url>               add an http MCP server (--env sets HEADERS here, not env vars)
+  add <ref> [--as <name>]              install from the public registry (version-pinned)
+  add <name> --tool -- <cmd …>         add a CLI tool  [--check <cmd> --setup <cmd>]
+       common to all four:             [--env K=V …] [--note <text>] [--replace] (--replace overwrites an
+                                       existing entry; without it, adding a known name is an error)
   remove | enable | disable <name>     remove / toggle a server or tool
   search <query>                       search the public MCP registry
-  import [<name> …]                    import MCP servers from your Claude configs
+  import                               what your Claude configs offer, tab-separated: source, name, stdio|http
+  import <name …>                      copy them in — tokens land in the secret store, not the config
+       [--as <name>]                        rename (one name only) — [--replace] overwrite
+       [--source <path>]                    only configs whose path contains this
 
 CLI TOOLS
   tool status                          installed? + update hint for pinned npm tools
-  tool setup <name>                    run a tool's installer
-  tool update [<name>]                 bump a pinned npm tool to the latest version
+  tool setup <name>                    run a tool's installer (and install its \`lib\` package, if it has one)
+  tool update [<name>]                 bump a pinned npm tool to the latest version (no name → all of them)
 
 SECRETS & AUTH
   secret set <NAME>                    store a secret (piped or hidden prompt) → ref as \${NAME}
@@ -56,11 +61,14 @@ DAEMON & SETUP
   shadow                               shadow nudges vs follow-up calls (did the redirect convert?)
   daemon [--stop | --install]          run in foreground / stop / install a systemd user unit
   hook install claude|codex [--remove] inject \`mduct index\` at session start + redirect mcp__* calls
+       [--settings <file>]             claude only: patch THAT settings.json (its .claude.json too)
   hook run session-start|pre-tool-use  the hook bodies themselves (a harness calls these, not you)
   doctor                               report MCP servers attached directly that mduct already serves
-  config [compact on|off]              show / set per-instance defaults (e.g. compact output)
-  help                                 this help
-  --version                            print the version and exit
+  config                               show this instance's defaults
+  config compact on|off                minify JSON output of every \`call\` by default
+  config warnAbove <chars|off>         size at which an oversized list becomes a jq hint instead of a dump
+  help | -h | --help                   this help
+  --version | -V                       print the version and exit
 
 STATE FOR OTHER PROGRAMS
   \`mduct status --json\` is the whole instance as one object: daemon up, paths, and every server
@@ -76,6 +84,8 @@ INSTANCES
   A named instance is one env var: MDUCT_PROFILE=<name> → ~/.config/mduct-<name>/ with its own
   config, secrets, auth and daemon socket (mirrors ~/.claude vs ~/.claude-<profile>).
   No profile → the default ~/.config/mduct/. \`mduct status\` shows which instance answered.
+  Single paths can be overridden one by one, which is what the test suite does and what bespoke
+  wiring needs: MDUCT_CONFIG, MDUCT_SECRETS, MDUCT_SOCKET, MDUCT_CACHE. They win over the profile.
 
 PIPING (keep big outputs OUT of your context — lossless)
   --json emits ONLY the JSON payload (prose stripped), so \`| jq\` works on any
@@ -98,7 +108,11 @@ EXAMPLES
   mduct add com.linear/mcp --as linear
   MDUCT_PROFILE=office mduct servers
 
-Config: ${configPath()}`;
+Config: ${configPath()}  (JSONC — comments allowed; \${VAR} resolves from env, then the secret store)
+  No flag writes these; edit the file. Per server: guard {allow,deny} (which tools may be called),
+  shadow [] (nudge an agent off a call this server could serve better — see \`mduct shadow\`),
+  mcpCatalog (mirror its tools into \`mduct mcp\`), indexTools, maxConcurrent, idleTtlMin, note,
+  disabled. Per CLI tool: run, args, env, check, setup, lib, note, disabled. The README has each.`;
 }
 
 /**

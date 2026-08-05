@@ -36,6 +36,29 @@ test("every flag main.ts reads is in the help", () => {
   expect(flags.filter((f) => !mentions(f))).toEqual([]);
 });
 
+/**
+ * The same check for the subcommand modules. Scanning only main.ts was the hole this test was
+ * supposed to close and didn't: `add --replace`, `import --source` and `hook install --settings`
+ * are read in src/cli/*.ts, so they never showed up here — and never showed up in the help either.
+ *
+ * Only flags the code READS count (take/takeBool/includes/indexOf). A flag passed THROUGH to another
+ * program (`systemctl --user`, `<tool> --help`) is that program's, not ours.
+ */
+test("every flag a subcommand module reads is in the help", () => {
+  const READS = /(?:take|takeBool)\("(--[a-z-]+)"\)|argv\.(?:includes|indexOf)\("(--[a-z-]+)"\)/g;
+  const found = new Set<string>();
+  for (const f of new Bun.Glob("src/cli/*.ts").scanSync(".")) {
+    for (const m of readFileSync(f, "utf8").matchAll(READS)) found.add((m[1] ?? m[2])!);
+  }
+  expect(found.size).toBeGreaterThan(8); // the extraction must not silently find nothing
+  expect([...found].sort().filter((f) => !mentions(f))).toEqual([]);
+});
+
+/** `config` grew a second default (warnAbove) that its own usage string knows about and the help did not. */
+test("every config default is in the help", () => {
+  for (const key of uniq(/setDefault\("([a-zA-Z]+)"/g)) expect(mentions(key)).toBe(true);
+});
+
 test("every subcommand main.ts compares against is in the help", () => {
   // `on`/`off` are values of `config compact`, not commands; the help documents them as
   // `compact on|off`, which the word check sees.
