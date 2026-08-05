@@ -29,7 +29,7 @@ CALL & RUN
   mcp                                  serve the tool CATALOGUE over MCP (names only; calls stay in the shell)
 
 SERVERS
-  servers                              configured MCP servers + connection state
+  servers [--json]                     configured MCP servers + connection state (--json = machine-readable)
   add                                  no args → interactive picker (↑↓, / search, ⏎ toggle)
   add <name> -- <cmd …>                add a stdio MCP server
   add <name> --url <url>               add an http MCP server
@@ -50,7 +50,8 @@ SECRETS & AUTH
   auth <server>                        OAuth sign-in for an http server (token stored, auto-refreshed)
 
 DAEMON & SETUP
-  status                               daemon up? + which instance (socket/config/secrets)
+  status [--json]                      daemon up? + which instance (socket/config/secrets)
+                                       --json adds every server's connection + auth state, in one object
   logs [server]                        recent daemon activity (per server if named)
   shadow                               shadow nudges vs follow-up calls (did the redirect convert?)
   daemon [--stop | --install]          run in foreground / stop / install a systemd user unit
@@ -60,6 +61,15 @@ DAEMON & SETUP
   config [compact on|off]              show / set per-instance defaults (e.g. compact output)
   help                                 this help
   --version                            print the version and exit
+
+STATE FOR OTHER PROGRAMS
+  \`mduct status --json\` is the whole instance as one object: daemon up, paths, and every server
+  with { transport, state, connected, auth }. \`mduct servers --json\` is just that server array.
+  state is connected · idle (healthy, no session open right now) · disabled.
+  auth.state is one of: n/a (nothing to authorize) · unauthorized (never signed in) · valid ·
+  refreshable (lapsed, the daemon renews it) · expired (a human must run auth.fix).
+  Neither autostarts the daemon, so polling them is safe; daemon down = nothing connected.
+    mduct status --json | jq -r '.servers[] | select(.auth.fix) | .auth.fix'   # what needs a login
 
 INSTANCES
   A named instance is one env var: MDUCT_PROFILE=<name> → ~/.config/mduct-<name>/ with its own
@@ -225,6 +235,11 @@ async function main(): Promise<number> {
       console.log(JSON.stringify(await daemonRequest("schema", { server: argv[0], tool: argv[1] }), null, 2));
       return 0;
     case "servers": {
+      if (boolFlag(argv, "--json")) {
+        const { collectState } = await import("./cli/state");
+        console.log(JSON.stringify((await collectState()).servers, null, 2));
+        return 0;
+      }
       const list = (await daemonRequest("servers", {})) as { name: string; connected: boolean; disabled: boolean; note?: string }[];
       // instance header on stderr so it's visible to humans but stdout stays clean for parsing
       process.stderr.write(`# instance: ${configPath()}\n`);
@@ -353,6 +368,11 @@ async function main(): Promise<number> {
       return 0;
     }
     case "status": {
+      if (boolFlag(argv, "--json")) {
+        const { collectState } = await import("./cli/state");
+        console.log(JSON.stringify(await collectState(), null, 2));
+        return 0;
+      }
       const { secretsPath } = await import("./shared/secrets");
       const sock = socketPath();
       let up = false;
