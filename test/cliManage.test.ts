@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,10 @@ async function mduct(...argv: string[]): Promise<{ out: string; err: string; cod
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   return { out, err, code };
 }
+
+// `servers` reaches the daemon, so it autostarts one on this file's own socket — and it outlives
+// the run unless someone stops it.
+afterAll(async () => { await mduct("daemon", "--stop"); });
 
 test("add -- command, then servers lists it", async () => {
   const r = await mduct("add", "fix", "--note", "fixture", "--", process.execPath, "test/fixture-server.ts");
