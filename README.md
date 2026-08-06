@@ -1,9 +1,10 @@
 [![ci](https://github.com/TheFox666/mduct/actions/workflows/ci.yml/badge.svg)](https://github.com/TheFox666/mduct/actions/workflows/ci.yml)
 
-<p align="center"><img src="docs/banner.png" alt="mduct — call MCP servers from the shell" width="100%"></p>
+<p align="center"><img src="docs/banner.png" alt="mduct: call MCP servers from the shell" width="100%"></p>
 
-One binary that turns any MCP server into a Unix tool — pipeable, scriptable,
-usable by hand — and keeps its tool schemas out of your model's context.
+mduct is a command-line interface for Model Context Protocol (MCP) servers. One
+binary turns any MCP server into a Unix tool: pipeable, scriptable, usable by
+hand. Its tool schemas stay out of your model's context.
 
 <p align="center"><img src="docs/demo.gif" alt="Terminal demo: listing MCP servers, inspecting tools without schemas, calling one, piping the result through jq, and a guard refusing a destructive tool" width="100%"></p>
 
@@ -14,10 +15,46 @@ mduct call gitlab list_issues state=opened --json | jq '.[].title'
 MCP servers don't come with a command line. This gives them one.
 It is a duct. Things go through it.
 
+## What it does
+
+- Call MCP tools straight from the terminal: by hand, in a script, in a cron job
+- Pipe results through `jq`, redirect them, loop over them, diff them
+- Put MCP servers in CI, with no model anywhere in the loop
+- Keep tool schemas on disk instead of in an LLM's context window
+- Serve plain CLIs (`kubectl`, `playwright`) through the same interface
+
+## Install
+
+```sh
+brew install thefox666/tap/mduct
+```
+
+Or without Homebrew. This fetches the release binary, checks its sha256, and
+puts `mduct` in `~/.local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/TheFox666/mduct/main/install.sh | sh
+```
+
+`ubi --project TheFox666/mduct` and `mise use -g ubi:TheFox666/mduct` work too,
+straight off the GitHub releases. From a checkout: `bun run build && cp
+dist/mduct ~/.local/bin/`.
+
+Then, in thirty seconds:
+
+```sh
+mduct import                  # lift MCP servers out of an existing Claude config
+mduct servers                 # what's configured
+mduct call gitlab list_issues state=opened --json | jq '.[].title'
+```
+
+[Quickstart](#quickstart) has the longer version: secrets, a server declared by
+hand, wiring an agent to it.
+
 ## Why
 
 An MCP server has no command line. It speaks JSON-RPC to an LLM client and that
-is the whole of it — you cannot pipe it, script it, loop over it, put it in a
+is the whole of it. You cannot pipe it, script it, loop over it, put it in a
 cron job, or try it by hand. Whatever it can do is reachable from exactly one
 place.
 
@@ -43,10 +80,10 @@ model. Humans get to use these servers too.
 Because a shell sits in the middle, you filter *before* anything becomes
 context. A tool that returns 20 issues returns 20 full issues; you wanted three
 fields. On a real call that is 1,768 characters in context where the server sent
-24,568 — the three fields you named, not the twenty objects it had.
+24,568: the three fields you named, not the twenty objects it had.
 
 That is the part worth having. The schemas are the smaller half of the same
-story: a client loads every connected server's tool definitions up front — one
+story: a client loads every connected server's tool definitions up front. One
 GitLab server is 189 tools and 191 kB of JSON Schema, call it 48k tokens before
 the model reads your question. mduct leaves them on disk and puts one line per
 server in the prompt instead:
@@ -64,7 +101,7 @@ CLI tools via `mduct` CLI (what it can do: mduct tools <tool>; run: mduct run <t
 A server small enough carries its signatures so an agent can see the call rather
 than remember to ask; a 189-tool one collapses to a count and a pointer. The
 signatures come from a cache the daemon fills as it is used, so the index never
-connects and works cold in a session hook. Measured on this setup — 7 servers,
+connects and works cold in a session hook. Measured on this setup, 7 servers and
 290 tools:
 
 | what the prompt carries | | |
@@ -74,40 +111,23 @@ connects and works cold in a session hook. Measured on this setup — 7 servers,
 | the index | 2.4 kB | ~600 tokens |
 
 Token counts are bytes ÷ 4. The ratios hold; the absolute numbers are estimates,
-and none of this is a claim about your bill — it is what sits in the prompt.
+and none of this is a claim about your bill. It is what sits in the prompt.
 
 273 of those 295 kB are JSON Schema; names and descriptions are 22. The prose
-that tells a model *when* to reach for a tool is 7% of the weight — and it is not
-gone either, just one call away: `mduct tools gitlab` lists names and signatures,
+that tells a model *when* to reach for a tool is 7% of the weight. It is not gone
+either, just one call away: `mduct tools gitlab` lists names and signatures,
 `mduct schema gitlab create_issue` pulls one definition in full when the fields
 matter.
 
 Lazy-loading the schemas stops there, and stopping there leaves the harder half
 undone: out of context, out of mind. An agent will not use a capability it
 cannot see, and a line in a prompt loses to habit at the moment a tool gets
-picked — one two-day session, 21 calls to a code-index server against 270 greps
+picked. One two-day session: 21 calls to a code-index server against 270 greps
 into the repos that server had indexed. The agent knew. It reached for grep
 anyway. Two answers below, priced differently: the [tool
 namespace](#putting-mcp-tool-names-in-the-agents-tool-namespace) puts the names
 where selection happens, [shadowing](#shadowing) speaks at the moment of the
 wrong call.
-
-## Install
-
-```sh
-brew install thefox666/tap/mduct
-```
-
-Or without Homebrew — fetches the release binary, checks its sha256, puts
-`mduct` in `~/.local/bin`:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/TheFox666/mduct/main/install.sh | sh
-```
-
-`ubi --project TheFox666/mduct` and `mise use -g ubi:TheFox666/mduct` work too,
-straight off the GitHub releases. From a checkout: `bun run build && cp
-dist/mduct ~/.local/bin/`.
 
 ## Quickstart
 
@@ -193,7 +213,7 @@ mduct daemon --install    # systemd user unit, if you want it at login
 |---|---|
 | Warm daemon | Connections and OAuth sessions survive between calls. A stdio server isn't respawned and a remote isn't re-handshaked every time you invoke it. |
 | Pipe-ready output | `--json` strips the prose some servers wrap around their payload. `--compact` minifies. Exit codes mean what you think they mean. |
-| State for other programs | `mduct status --json`: every server's connection and OAuth state as data, so an app can show a dead login instead of you finding out mid-task. Polling is safe — it starts no daemon. [Fields](https://github.com/TheFox666/mduct/wiki/Commands#machine-readable-state). |
+| State for other programs | `mduct status --json`: every server's connection and OAuth state as data, so an app can show a dead login instead of you finding out mid-task. Polling is safe: it starts no daemon. [Fields](https://github.com/TheFox666/mduct/wiki/Commands#machine-readable-state). |
 | Guards in the daemon | Per-server `allow`/`deny` patterns, living somewhere the model cannot argue with them. |
 | Secrets out of the config | `${VAR}` refs resolve from a 0600 store. Plaintext tokens never touch `servers.jsonc`. |
 | MCP and plain CLIs | `kubectl`, `playwright` and friends show up in the same list and are called the same way. Nobody has to care which is which. |
@@ -233,7 +253,7 @@ plain CLIs, plus `defaults`.
 ```
 
 ```sh
-mduct tools kubectl                      # what it can do — the tool's own help, through its wrapper
+mduct tools kubectl                      # what it can do: the tool's own help, through its wrapper
 mduct run kubectl get pods -n default    # with the tool's env/wrapping applied
 mduct tool status                        # installed / missing, + update hints for pinned npm tools
 ```
@@ -242,7 +262,7 @@ mduct tool status                        # installed / missing, + update hints f
 signatures; for a CLI tool it runs that tool's help. Otherwise the only way to
 discover a CLI tool's surface is to already know it.
 
-A CLI is not always enough — sometimes a script needs the library behind it.
+A CLI is not always enough. Sometimes a script needs the library behind it.
 Declare it, and mduct keeps a pinned copy and hands you the environment:
 
 ```jsonc
@@ -322,11 +342,11 @@ mduct hook install codex               # same, as [mcp_servers.mduct]
 The catalogue reloads itself: it watches the config and its tool cache, and sends
 `notifications/tools/list_changed` when what it would serve actually differs. Flip
 `mcpCatalog` on a server, or call a server for the first time so its tools become
-known, and the names appear in a running session — no restart, and no wake-up for
+known, and the names appear in a running session. No restart, and no wake-up for
 a rewrite that changed nothing.
 
 Hooks live in `settings.json` and MCP servers in `.claude.json`, so the install
-touches both — leaving the second to you is an install that half-works and a
+touches both. Leaving the second to you is an install that half-works and a
 catalogue nobody sees. `--remove` takes it back out, and session start says so
 if a server declares `mcpCatalog` while the server is not registered. Codex keeps
 hooks and servers in the same TOML, which makes that install the easier of the two.
@@ -335,36 +355,36 @@ hooks and servers in the same TOML, which makes that install the easier of the t
 
 Not the ones you talk about. "Look at the GitLab MR" or "file a Linear ticket"
 names the server, and the request drags the tool in by itself. The ones worth
-the namespace are the servers **no request ever names** — a code index, a
+the namespace are the servers **no request ever names**: a code index, a
 knowledge base, anything an agent is supposed to reach for on its own initiative
 while doing something else. That is exactly where a prose line loses to habit.
 
 Cost keeps the list short: a catalogue entry runs about nine times the prose line
-for the same tool. Measured on one setup — 15 tools are 4.1 kB as a catalogue
+for the same tool. Measured on one setup, 15 tools are 4.1 kB as a catalogue
 against 0.46 kB as signatures in the index; a 189-tool server would be 51 kB. A
 catalogued server drops its signatures from the prompt block, so you never pay
 for both. The descriptions it carries are the truncated ones from the index
-cache, not the server's full prose — a tool whose description does its routing
+cache, not the server's full prose. A tool whose description does its routing
 loses that here.
 
 ## Shadowing
 
 A server can declare which *other* tool calls it could have served, and mduct
-says so at the moment of the call. The call still runs — the note rides along
-with its result — and a token bucket decides how often it speaks:
+says so at the moment of the call. The call still runs, the note rides along with
+its result, and a token bucket decides how often it speaks:
 
 ```jsonc
 "shadow": [{
   "tool": ["Grep"],
   "bash": "(?:^|[\\n;]|&&)\\s*(grep|rg|ugrep)\\b",
   "pathIn": ["~/src/bigrepo"],
-  "hint": "That repo is indexed — `mduct call codeindex search query=…` is faster.",
+  "hint": "That repo is indexed, `mduct call codeindex search query=…` is faster.",
   "budget": 2,
   "refillMin": 30
 }]
 ```
 
-This exists because a prompt block is read once and then loses to habit — the
+This exists because a prompt block is read once and then loses to habit. See the
 21-against-270 session above.
 
 The note arrives as `additionalContext`, never as an approval: a nudge must not
@@ -409,15 +429,15 @@ mduct doctor                           # servers attached directly AND served he
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md) — mostly the four constraints a change must
+[CONTRIBUTING.md](CONTRIBUTING.md) is mostly the four constraints a change must
 not cross, so nobody finds out after writing it, plus the one house rule: a
 change that can break carries a test that fails without it.
 
 ## Not built yet
 
-npm. It would mean either four platform packages of a ~90 MB binary, or dropping
-the Bun APIs the daemon is built on — `Bun.listen`, `Bun.connect`, `Bun.serve`
-are the unix socket and the OAuth callback — for their node equivalents. About
+npm. It would mean either four platform packages of a ~90 MB binary, or trading
+the Bun APIs the daemon is built on for their node equivalents. `Bun.listen`,
+`Bun.connect` and `Bun.serve` are the unix socket and the OAuth callback. About
 150 lines, and then `npx mduct` would work without installing anything.
 
 Windows, for the same reason: the IPC is a unix socket.
