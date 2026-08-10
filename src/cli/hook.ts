@@ -166,9 +166,15 @@ export async function hookRunPreToolUse(): Promise<number> {
  * (stay quiet). Checked for whichever harness is actually installed: no Claude hook and no Codex
  * block means the drift warning has nothing to say.
  */
+/** Where Claude Code's user settings live for THIS invocation: $CLAUDE_CONFIG_DIR, else ~/.claude. */
+function claudeSettingsPath(): string {
+  const dir = process.env.CLAUDE_CONFIG_DIR;
+  return dir ? join(dir, "settings.json") : join(home(), ".claude", "settings.json");
+}
+
 function installedMatcherCovers(needed: string): boolean {
   const wants = needed.split("|");
-  const p = process.env.MDUCT_CLAUDE_SETTINGS ?? join(home(), ".claude", "settings.json");
+  const p = process.env.MDUCT_CLAUDE_SETTINGS ?? claudeSettingsPath();
   let entries: HookEntry[] = [];
   try { entries = (JSON.parse(readFileSync(p, "utf8")) as Settings).hooks?.PreToolUse ?? []; } catch { /* fall through to Codex */ }
   const ours = entries.filter((e) => (e.hooks ?? []).some((h) => h.command.endsWith("hook run pre-tool-use")));
@@ -238,7 +244,12 @@ export function hookInstall(argv: string[]): number {
     return v;
   };
   const remove = argv.includes("--remove");
-  const settingsPath = take("--settings") ?? join(home(), ".claude", "settings.json");
+  // CLAUDE_CONFIG_DIR before the default, because Claude Code itself honours it and a second config
+  // is the whole point of having one: an agent with its own permissions, its own credential and its
+  // own servers. Ignoring it here did not fail — it patched the OPERATOR's settings.json and said
+  // "installed", so the agent that was supposed to get the hook silently never had one.
+  // discoverClaudeSources() already reads this variable; this is the same rule, applied to writing.
+  const settingsPath = take("--settings") ?? claudeSettingsPath();
   const settings: Settings = existsSync(settingsPath) ? (JSON.parse(readFileSync(settingsPath, "utf8")) as Settings) : {};
   const hooks = (settings.hooks ??= {});
 

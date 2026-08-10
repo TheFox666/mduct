@@ -133,3 +133,28 @@ test("an explicit --settings never reaches the real ~/.claude.json", async () =>
   expect(out).not.toContain(join(homedir(), ".claude.json"));
   expect(existsSync(join(d, ".claude.json"))).toBe(true);
 }, 30_000);
+
+test("CLAUDE_CONFIG_DIR decides where the hook is installed, without --settings", async () => {
+  // The failure this pins reported SUCCESS. Mortimer's installer set CLAUDE_CONFIG_DIR and called
+  // `hook install claude`; the default path ignored it, so the hook landed in the OPERATOR's
+  // ~/.claude/settings.json and the curator — a separate Claude config with its own permissions —
+  // never got one. It printed "installed" every time. Found 2026-08-10, after weeks of an agent
+  // saying it could not reach mduct while its own role doc told it to.
+  //
+  // discoverClaudeSources already honours this variable, so mduct was inconsistent with itself.
+  const d = mkdtempSync(join(tmpdir(), "mduct-ccd-"));
+  const cfgPath = join(d, "servers.jsonc");
+  writeFileSync(cfgPath, JSON.stringify({ servers: { kb: { command: "true" } } }));
+  const env = { ...process.env, MDUCT_CONFIG: cfgPath, CLAUDE_CONFIG_DIR: d };
+  delete (env as Record<string, string | undefined>).MDUCT_CLAUDE_MCP_CONFIG;
+
+  const p = Bun.spawn([process.execPath, "src/main.ts", "hook", "install", "claude"],
+    { env, stdout: "pipe", stderr: "pipe" });
+  const out = await new Response(p.stdout).text();
+  await p.exited;
+
+  expect(out).toContain(join(d, "settings.json"));
+  expect(out).not.toContain(join(homedir(), ".claude", "settings.json"));
+  const s = JSON.parse(readFileSync(join(d, "settings.json"), "utf8")) as { hooks?: Record<string, unknown[]> };
+  expect(s.hooks?.SessionStart?.length).toBeGreaterThan(0);
+}, 30_000);
