@@ -110,6 +110,25 @@ export class FileOAuthProvider implements OAuthClientProvider {
     return v;
   }
 
+  /**
+   * The SDK's recovery path. When the server rejects the refresh token (`invalid_grant` — a grant
+   * that was revoked, expired, or belongs to a deleted client) or the registered client itself,
+   * `auth()` calls this and then retries the flow from the top. Unimplemented, that retry re-reads
+   * the same dead tokens, gets the same rejection, and this time it throws: `mduct auth <server>`
+   * could never recover a lapsed session, only report it, and the way out was deleting the file by
+   * hand. Dropping the credentials here is what lets the retry fall through to a fresh browser flow.
+   */
+  invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): void {
+    if (scope === "all") { this.write({}); return; }
+    const data = this.read();
+    // savedAt dates the tokens — it goes with them, or it would date their replacement wrongly.
+    if (scope === "tokens") { delete data.tokens; delete data.savedAt; }
+    if (scope === "client") delete data.clientInformation;
+    if (scope === "verifier") delete data.codeVerifier;
+    // "discovery": nothing cached on disk, nothing to drop.
+    this.write(data);
+  }
+
   /** The daemon prints this URL; a human opens it. `mduct auth` captures the redirect. */
   redirectToAuthorization(url: URL): void { this.pendingAuthUrl = url; }
   pendingAuthUrl: URL | null = null;

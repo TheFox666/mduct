@@ -27,6 +27,36 @@ describe("FileOAuthProvider", () => {
     expect(await p.codeVerifier()).toBe("verifier-123");
   });
 
+  /**
+   * The SDK calls invalidateCredentials when the server rejects a refresh token or a client, then
+   * retries the whole flow. If this drops nothing, the retry meets the same dead credentials and
+   * throws — which is how a revoked Sentry grant made `mduct auth sentry` unrecoverable.
+   */
+  test("invalidating tokens clears the dead session but keeps the registered client", async () => {
+    const p = new FileOAuthProvider("revoked", "http://127.0.0.1:9/cb");
+    await p.saveClientInformation({ client_id: "cid" } as any);
+    await p.saveTokens({ access_token: "at", token_type: "bearer", refresh_token: "dead", expires_in: 3600 } as any);
+
+    p.invalidateCredentials("tokens");
+
+    expect(await p.tokens()).toBeUndefined();
+    expect(readAuthState("revoked").hasTokens).toBe(false); // no session, so auth() starts a new one
+    expect((await p.clientInformation())!.client_id).toBe("cid"); // re-registration not needed
+  });
+
+  test("invalidating everything leaves no credentials behind", async () => {
+    const p = new FileOAuthProvider("wiped", "http://127.0.0.1:9/cb");
+    await p.saveClientInformation({ client_id: "cid" } as any);
+    await p.saveTokens({ access_token: "at", token_type: "bearer" } as any);
+    await p.saveCodeVerifier("v");
+
+    p.invalidateCredentials("all");
+
+    expect(await p.tokens()).toBeUndefined();
+    expect(await p.clientInformation()).toBeUndefined();
+    expect(() => p.codeVerifier()).toThrow();
+  });
+
   test("two servers keep separate token files", async () => {
     const a = new FileOAuthProvider("a", "http://127.0.0.1:9/cb");
     const b = new FileOAuthProvider("b", "http://127.0.0.1:9/cb");
