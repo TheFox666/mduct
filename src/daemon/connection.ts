@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { auth as sdkAuth } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { ServerCfg } from "../shared/config";
 import { guardAllows } from "./guard";
 import { toolSignature } from "../cli/format";
@@ -28,6 +29,17 @@ function childSpawnCwd(): string | undefined {
 
 export type ToolInfo = { name: string; description?: string; inputSchema?: unknown };
 export type CallResult = { content: unknown[]; isError?: boolean };
+
+/**
+ * A remote server that reports an expired access token as a tool RESULT instead of an HTTP 401 —
+ * LaunchDarkly: isError + {"code":"token_expired"} — never triggers the SDK's refresh, so the stored
+ * refresh token went unused and the login lapsed (2026-10-22).
+ */
+export function reportsExpiredToken(r: CallResult): boolean {
+  if (!r?.isError) return false;
+  const text = (r.content ?? []).map((c) => (typeof (c as { text?: unknown })?.text === "string" ? (c as { text: string }).text : "")).join(" ");
+  return /token_expired|access token has expired/i.test(text);
+}
 
 /**
  * Refine the CLI's heuristically-coerced scalar args against the tool's DECLARED param types — the
@@ -169,7 +181,14 @@ export class ServerConnection {
       // listTools). Fail-safe — if the schema can't be fetched, args pass through unchanged.
       const schema = await this.listTools().then((ts) => ts.find((t) => t.name === tool)?.inputSchema).catch(() => undefined);
       try {
-        return (await client.callTool({ name: tool, arguments: normalizeArgs(args, schema) })) as CallResult;
+        const result = (await client.callTool({ name: tool, arguments: normalizeArgs(args, schema) })) as CallResult;
+        if (this.cfg.auth !== "oauth" || !this.cfg.url || !reportsExpiredToken(result)) return result;
+        // refresh with the stored refresh token, reconnect so the transport sends the new access token, retry once
+        await sdkAuth(new FileOAuthProvider(this.name, "http://127.0.0.1:0/cb"), { serverUrl: this.cfg.url });
+        await this.client?.close().catch(() => {});
+        this.drop();
+        const fresh = await this.ensure();
+        return (await fresh.callTool({ name: tool, arguments: normalizeArgs(args, schema) })) as CallResult;
       } catch (e) {
         // The child must be closed, not just dereferenced: drop() only nulls refs, so dropping
         // alone orphans the process and the next call spawns a second one (child leak). With
